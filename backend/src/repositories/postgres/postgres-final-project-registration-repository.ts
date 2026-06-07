@@ -284,6 +284,56 @@ export class PostgresFinalProjectRegistrationRepository
     });
   }
 
+  async replaceSupervisorAssignmentsByStudentId(
+    studentId: string,
+    assignments: SupervisorAssignment[],
+    input: {
+      actorId: string;
+      timestamp: string;
+      coordinatorNote?: string;
+    }
+  ) {
+    return this.withTransaction(async (client) => {
+      const registration = await this.findApprovedByStudentIdForUpdate(studentId, client);
+      if (!registration) {
+        return null;
+      }
+
+      await client.query(
+        `
+          DELETE FROM supervisor_assignments
+          WHERE registration_id = $1
+        `,
+        [registration.id]
+      );
+
+      await this.insertSupervisorAssignments(
+        registration.id,
+        assignments.map((assignment) => ({
+          ...assignment,
+          assignedBy: assignment.assignedBy ?? input.actorId,
+          assignedAt: assignment.assignedAt || input.timestamp,
+          coordinatorNote: assignment.coordinatorNote || input.coordinatorNote,
+        })),
+        input.actorId,
+        input.timestamp,
+        client
+      );
+
+      const updatedResult = await client.query<FinalProjectRegistrationRow>(
+        `
+          UPDATE final_project_registrations
+          SET updated_at = $2, updated_by = $3
+          WHERE id = $1
+          RETURNING ${registrationColumns}
+        `,
+        [registration.id, input.timestamp, input.actorId]
+      );
+      const registrations = await this.hydrate(updatedResult.rows, client);
+      return registrations[0] || null;
+    });
+  }
+
   private async findActiveByStudentIdForUpdate(
     studentId: string,
     client: PostgresTransactionClient
@@ -299,6 +349,26 @@ export class PostgresFinalProjectRegistrationRepository
         FOR UPDATE
       `,
       [studentId, activeStatuses]
+    );
+
+    return result.rows[0] || null;
+  }
+
+  private async findApprovedByStudentIdForUpdate(
+    studentId: string,
+    client: PostgresTransactionClient
+  ) {
+    const result = await client.query<FinalProjectRegistrationRow>(
+      `
+        SELECT ${registrationColumns}
+        FROM final_project_registrations
+        WHERE student_id = $1
+          AND status = 'Disetujui'
+        ORDER BY ${orderByNewest}
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [studentId]
     );
 
     return result.rows[0] || null;

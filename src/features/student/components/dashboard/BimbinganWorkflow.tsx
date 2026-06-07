@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isDemoModeEnabled } from "@/lib/demo-mode";
-import { guidanceApi, lecturerWorkflowApi, progressApi, studentWorkflowApi } from "../../../../core/api/domain";
+import { coordinatorWorkflowApi, guidanceApi, lecturerWorkflowApi, progressApi, studentWorkflowApi } from "../../../../core/api/domain";
 import type { BimbinganData, BimbinganSession } from "../../types/bimbingan";
 import {
   type RequirementItem,
@@ -60,6 +60,7 @@ interface BimbinganWorkflowProps {
   role?: "mahasiswa" | "pembimbing";
   studentId?: string; // Digunakan jika role = 'pembimbing'
   useLecturerApi?: boolean;
+  useCoordinatorApi?: boolean;
   onStatusChange?: () => void; // Pemicu re-render parent jika status berubah
 }
 
@@ -68,6 +69,7 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
   role = "mahasiswa",
   studentId = "1",
   useLecturerApi = false,
+  useCoordinatorApi = false,
   onStatusChange,
 }) => {
   const [data, setData] = useState<BimbinganData>(() =>
@@ -94,6 +96,7 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
   };
 
   const isLecturerWorkflow = role === "pembimbing" && useLecturerApi;
+  const isCoordinatorWorkflow = role === "pembimbing" && useCoordinatorApi;
 
   const applyGuidanceData = (nextData: BimbinganData) => {
     setData(nextData);
@@ -111,21 +114,32 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
   });
 
   const readGuidanceWorkflow = () =>
-    isLecturerWorkflow
-      ? lecturerWorkflowApi.getGuidance(studentId, stageId)
-      : guidanceApi.get(stageId);
+    isCoordinatorWorkflow
+      ? coordinatorWorkflowApi.getGuidanceAggregate(studentId, stageId)
+      : isLecturerWorkflow
+      ? lecturerWorkflowApi.getGuidanceAggregate(studentId, stageId)
+      : guidanceApi.getAggregate(stageId);
 
   const approveGuidanceWorkflow = (payload: {
     startDate: string;
     startTime: string;
     approvalNote: string;
   }) =>
-    isLecturerWorkflow
+    isCoordinatorWorkflow
+      ? Promise.reject(new Error("Coordinator guidance view is read-only."))
+      : isLecturerWorkflow && data.guidanceRequestId
+      ? lecturerWorkflowApi.validateGuidanceRequest(data.guidanceRequestId, {
+          status: "Disetujui",
+          catatanDosen: payload.approvalNote,
+        })
+      : isLecturerWorkflow
       ? lecturerWorkflowApi.approveGuidanceRequest(studentId, stageId, payload)
       : guidanceApi.approveGuidance(stageId, payload);
 
   const updateSupervisorApproval = (pembimbingNum: 1 | 2, approved: boolean) =>
-    isLecturerWorkflow
+    isCoordinatorWorkflow
+      ? Promise.reject(new Error("Coordinator guidance view is read-only."))
+      : isLecturerWorkflow
       ? lecturerWorkflowApi.updateGuidanceApproval(studentId, stageId, {
           pembimbingNum,
           approved,
@@ -135,10 +149,47 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
   const approveSessionWorkflow = (
     sessionId: number,
     payload: { startDate: string; startTime: string }
-  ) =>
-    isLecturerWorkflow
+  ) => {
+    const session = data.sessions.find((item) => item.id === sessionId);
+    if (isCoordinatorWorkflow) {
+      return Promise.reject(new Error("Coordinator guidance view is read-only."));
+    }
+
+    if (isLecturerWorkflow && data.guidanceRequestId && session?.materialId) {
+      return lecturerWorkflowApi.validateGuidanceMaterial(
+        data.guidanceRequestId,
+        session.materialId,
+        {
+          status: "Valid",
+          catatanDosen: `Materi sesi ${sessionId} valid.`,
+        }
+      );
+    }
+
+    return isLecturerWorkflow
       ? lecturerWorkflowApi.approveSessionGuidance(studentId, stageId, sessionId, payload)
       : guidanceApi.approveSessionGuidance(stageId, sessionId, payload);
+  };
+
+  const rejectSessionWorkflow = (session: BimbinganSession) => {
+    if (!isLecturerWorkflow || !data.guidanceRequestId || !session.materialId) {
+      return Promise.reject(new Error("Validasi materi hanya tersedia untuk aggregate guidance."));
+    }
+
+    const note = window.prompt("Catatan penolakan materi:", session.lecturerNote || "");
+    if (!note?.trim()) {
+      return Promise.resolve(null);
+    }
+
+    return lecturerWorkflowApi.validateGuidanceMaterial(
+      data.guidanceRequestId,
+      session.materialId,
+      {
+        status: "Ditolak",
+        catatanDosen: note.trim(),
+      }
+    );
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -154,7 +205,7 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
     return () => {
       mounted = false;
     };
-  }, [stageId, studentId, isLecturerWorkflow]);
+  }, [stageId, studentId, isLecturerWorkflow, isCoordinatorWorkflow]);
 
   const handleResetGuidance = async () => {
     const response = await guidanceApi.resetGuidance(stageId);
@@ -163,9 +214,19 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
   };
 
   const handleSimulateRequestGuidance = async () => {
-    const response = await guidanceApi.requestGuidance(stageId, "Saya ingin memulai bimbingan untuk penyusunan proposal Tugas Akhir.");
-    setData(response.data);
-    triggerGuidanceToast("Simulasi: Pengajuan bimbingan terkirim.");
+    const googleDocsLink = (docLinkInput || data.googleDocsLink).trim();
+    if (!googleDocsLink) {
+      triggerGuidanceToast("Isi link Google Docs terlebih dahulu sebelum mengajukan bimbingan.");
+      setIsEditingDoc(true);
+      return;
+    }
+
+    const response = await guidanceApi.submitRequest(stageId, {
+      googleDocsLink,
+      studentNote: "Saya ingin memulai bimbingan untuk penyusunan proposal Tugas Akhir.",
+    });
+    applyGuidanceData(response.data);
+    triggerGuidanceToast("Pengajuan bimbingan terkirim ke dosen pembimbing.");
   };
 
   const handleSimulateApproveGuidance = async () => {
@@ -377,7 +438,12 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
   // Google Docs Save
   const handleSaveDocLink = async () => {
     const response = await guidanceApi.updateDocsLink(stageId, docLinkInput);
-    setData(response.data);
+    try {
+      const aggregate = await guidanceApi.getAggregate(stageId);
+      applyGuidanceData(aggregate.data);
+    } catch {
+      setData(response.data);
+    }
     setIsEditingDoc(false);
   };
 
@@ -429,6 +495,11 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
     e.preventDefault();
     if (!topicInput.trim()) return;
 
+    if (data.guidanceStatus !== "approved" || !data.guidanceRequestId) {
+      triggerGuidanceToast("Pengajuan bimbingan harus disetujui dosen sebelum materi dikirim.");
+      return;
+    }
+
     const nextSession = data.sessions.find(
       (s) => s.status === "pending" && (s.sessionStatus === "idle" || !s.sessionStatus)
     );
@@ -438,14 +509,15 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
       return;
     }
 
-    await guidanceApi.updateSession(stageId, nextSession.id, {
-      title: topicInput,
-      status: nextSession.status,
+    await guidanceApi.submitMaterial(data.guidanceRequestId, {
+      materialType: "normal",
+      topic: topicInput,
+      content: topicInput,
     });
-    const response = await guidanceApi.requestSessionGuidance(stageId, nextSession.id);
+    const response = await guidanceApi.getAggregate(stageId);
     setTopicInput("");
     setShowAjukanForm(false);
-    setData(response.data);
+    applyGuidanceData(response.data);
     triggerGuidanceToast(`Materi bimbingan Sesi ke-${nextSession.id} berhasil diajukan!`);
   };
   // File Upload Simulation
@@ -580,6 +652,81 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
               <RotateCcw className="w-3 h-3" /> Reset Pengajuan
             </button>
           )}
+        </div>
+      )}
+
+      {data.guidanceStatus !== "approved" && (
+        <div className={cn(
+          "border rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in duration-200",
+          data.requestStatus === "Ditolak"
+            ? "bg-red-500/[0.04] border-red-500/20"
+            : data.guidanceStatus === "requested"
+              ? "bg-amber-500/[0.04] border-amber-500/20"
+              : "bg-card border-border/80"
+        )}>
+          <div className="flex items-start gap-3 min-w-0">
+            <div className={cn(
+              "w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border",
+              data.requestStatus === "Ditolak"
+                ? "bg-red-50 text-red-600 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/40"
+                : data.guidanceStatus === "requested"
+                  ? "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/40"
+                  : "bg-primary/10 text-primary border-primary/20"
+            )}>
+              {data.requestStatus === "Ditolak" ? (
+                <XCircle className="w-5 h-5" />
+              ) : data.guidanceStatus === "requested" ? (
+                <Clock className="w-5 h-5" />
+              ) : (
+                <BookOpen className="w-5 h-5" />
+              )}
+            </div>
+            <div className="space-y-1 min-w-0">
+              <h6 className="text-xs font-bold text-foreground">
+                {data.requestStatus === "Ditolak"
+                  ? "Pengajuan Bimbingan Ditolak"
+                  : data.guidanceStatus === "requested"
+                    ? "Menunggu Validasi Dosen"
+                    : "Pengajuan Bimbingan Belum Dikirim"}
+              </h6>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                {data.requestStatus === "Ditolak"
+                  ? data.guidanceApprovalNote || "Silakan perbaiki link atau catatan, lalu ajukan kembali."
+                  : data.guidanceStatus === "requested"
+                    ? "Dosen pembimbing perlu menyetujui request sebelum materi bimbingan dapat dikirim."
+                    : "Kirim request bimbingan dengan link Google Docs agar dosen bisa memvalidasi tahap ini."}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-2 shrink-0">
+            {role === "mahasiswa" && data.guidanceStatus !== "requested" && (
+              <button
+                type="button"
+                onClick={handleSimulateRequestGuidance}
+                className="px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-xl shadow-xs transition hover:opacity-90 inline-flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                Ajukan Bimbingan
+              </button>
+            )}
+            {role === "pembimbing" && !isCoordinatorWorkflow && data.guidanceStatus === "requested" && data.guidanceRequestId && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const response = await approveGuidanceWorkflow({
+                    startDate: new Date().toISOString().slice(0, 10),
+                    startTime: "10:00",
+                    approvalNote: "Pengajuan bimbingan disetujui.",
+                  });
+                  applyGuidanceData(response.data);
+                  triggerGuidanceToast("Pengajuan bimbingan disetujui.");
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-xs transition inline-flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                Setujui Request
+              </button>
+            )}
+          </div>
         </div>
       )}
     <>
@@ -930,6 +1077,22 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
                     
                     {/* Student Submit Form Card */}
                     {role === "mahasiswa" && (() => {
+                      if (data.guidanceStatus !== "approved") {
+                        return (
+                          <div className="bg-muted/10 border border-border/80 rounded-xl p-4 flex items-start gap-3">
+                            <Lock className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                            <div className="space-y-1">
+                              <h6 className="text-xs font-semibold text-foreground">
+                                Pengajuan Materi Belum Aktif
+                              </h6>
+                              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                Materi bimbingan baru dapat dikirim setelah request bimbingan disetujui dosen.
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }
+
                       const nextPending = data.sessions.find(
                         (s) => s.status === "pending" && (s.sessionStatus === "idle" || !s.sessionStatus)
                       );
@@ -997,12 +1160,16 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
                         const isApproved = session.status === "approved" || session.sessionStatus === "approved";
                         const isInProgress = session.status === "in progress";
                         const isRequested = session.sessionStatus === "requested";
-                        const isIdle = !isApproved && !isInProgress && !isRequested;
+                        const isRejected = session.materialStatus === "Ditolak";
+                        const isIdle = !isApproved && !isInProgress && !isRequested && !isRejected;
 
                         let statusLabel = "Belum Diajukan";
                         let statusColor = "bg-slate-500/10 border-slate-500/20 text-slate-550 dark:text-slate-400 dark:bg-slate-900/40";
 
-                        if (isApproved) {
+                        if (isRejected) {
+                          statusLabel = "Ditolak";
+                          statusColor = "bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400 dark:bg-red-950/20";
+                        } else if (isApproved) {
                           statusLabel = "Selesai";
                           statusColor = "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 dark:bg-emerald-950/20";
                         } else if (isInProgress) {
@@ -1023,6 +1190,7 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
                               isApproved && "bg-emerald-500/[0.01] border-emerald-500/10 hover:border-emerald-500/20",
                               isInProgress && "bg-blue-500/[0.01] border-blue-500/20 shadow-2xs",
                               isRequested && "bg-amber-500/[0.01] border-amber-500/20 shadow-2xs",
+                              isRejected && "bg-red-500/[0.01] border-red-500/20 shadow-2xs",
                               isIdle && "bg-card border-border/80 hover:bg-muted/10"
                             )}
                           >
@@ -1033,6 +1201,7 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
                                   isApproved && "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:bg-emerald-950/30",
                                   isInProgress && "bg-blue-500/10 border-blue-500/20 text-blue-600 dark:bg-blue-950/30 ring-4 ring-blue-100/30 dark:ring-blue-950/15",
                                   isRequested && "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400 dark:bg-amber-950/30 ring-4 ring-amber-100/30 dark:ring-amber-950/15",
+                                  isRejected && "bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400 dark:bg-red-950/30",
                                   isIdle && "bg-slate-500/5 border-slate-200 text-slate-400 dark:bg-slate-800/40 dark:border-slate-700"
                                 )}
                               >
@@ -1046,6 +1215,7 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
                                     isApproved && "text-foreground/85",
                                     isInProgress && "text-blue-600 dark:text-blue-400",
                                     isRequested && "text-amber-600 dark:text-amber-400",
+                                    isRejected && "text-red-600 dark:text-red-400",
                                     isIdle && "text-slate-400 dark:text-slate-500 font-normal italic"
                                   )}
                                 >
@@ -1053,7 +1223,13 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
                                 </h6>
                                 <p className="text-[10px] text-muted-foreground">
                                   Sesi Bimbingan Ke-{session.id}
+                                  {session.attemptNumber && session.attemptNumber > 1 ? ` - Percobaan ${session.attemptNumber}` : ""}
                                 </p>
+                                {isRejected && session.lecturerNote && (
+                                  <p className="text-[10px] text-red-600 dark:text-red-400 font-medium leading-relaxed">
+                                    Catatan dosen: {session.lecturerNote}
+                                  </p>
+                                )}
 
                                 {/* Schedule Details */}
                                 {(isApproved || isInProgress) && schedInfo && (
@@ -1075,13 +1251,27 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
                             <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
                               {/* Lecturer action: Setujui & Jadwalkan */}
                               {role === "pembimbing" && isRequested && (
-                                <button
-                                  type="button"
-                                  onClick={() => setSchedulingSession(session)}
-                                  className="px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-xl shadow-xs transition hover:opacity-90 inline-flex items-center justify-center gap-1.5 cursor-pointer"
-                                >
-                                  Setujui & Jadwalkan
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSchedulingSession(session)}
+                                    className="px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-xl shadow-xs transition hover:opacity-90 inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                                  >
+                                    Setujui Materi
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const response = await rejectSessionWorkflow(session);
+                                      if (!response) return;
+                                      applyGuidanceData(response.data);
+                                      triggerGuidanceToast(`Materi sesi ke-${session.id} ditolak dengan catatan.`);
+                                    }}
+                                    className="px-4 py-2 border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-50/40 dark:hover:bg-red-950/20 text-xs font-semibold rounded-xl transition inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                                  >
+                                    Tolak
+                                  </button>
+                                </>
                               )}
 
                               {/* Lecturer action: Tandai Selesai */}

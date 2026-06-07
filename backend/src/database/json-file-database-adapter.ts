@@ -170,16 +170,23 @@ export class JsonFileDatabaseAdapter implements DatabaseAdapter {
     const migrated: DatabaseState = {
       ...defaults,
       ...state,
-      schemaVersion: 7,
+      schemaVersion: 9,
       users: migratedUsers,
       userRoles: mergeUserRoles(
         migratedUsers,
         state.userRoles as UserRoleAssignment[] | undefined,
         defaults.userRoles
       ),
+      lecturerProfiles: {
+        ...defaults.lecturerProfiles,
+        ...(state.lecturerProfiles || {}),
+      },
       finalProjectRegistrations: state.finalProjectRegistrations || [],
+      guidanceRequests: state.guidanceRequests || [],
+      guidanceMaterials: state.guidanceMaterials || [],
       refreshTokens: state.refreshTokens || [],
       auditLogs: state.auditLogs || [],
+      auditExportAttempts: state.auditExportAttempts || [],
       permissionsByRole: mergePermissionsByRole(
         state.permissionsByRole,
         defaults.permissionsByRole

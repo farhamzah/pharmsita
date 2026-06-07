@@ -4,31 +4,32 @@ interface BaseModalProps {
   open: boolean;
   onClose: () => void;
   title?: string;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl";
   children: React.ReactNode;
   footer?: React.ReactNode;
 }
 
 const widthMap = {
-  sm: 'max-w-sm',
-  md: 'max-w-md',
-  lg: 'max-w-lg',
-  xl: 'max-w-xl',
-  '2xl': 'max-w-2xl',
+  sm: "max-w-sm",
+  md: "max-w-md",
+  lg: "max-w-lg",
+  xl: "max-w-xl",
+  "2xl": "max-w-2xl",
 };
 
 const BaseModal: React.FC<BaseModalProps> = ({
   open,
   onClose,
   title,
-  maxWidth = 'lg',
+  maxWidth = "lg",
   children,
   footer,
 }) => {
   useEffect(() => {
-    document.body.style.overflow = open ? 'hidden' : 'auto';
+    document.body.style.overflow = open ? "hidden" : "auto";
+
     return () => {
-      document.body.style.overflow = 'auto';
+      document.body.style.overflow = "auto";
     };
   }, [open]);
 
@@ -36,31 +37,29 @@ const BaseModal: React.FC<BaseModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 backdrop-blur-sm sm:p-4"
       onClick={onClose}
     >
       <div
-        className={`w-full ${widthMap[maxWidth]} bg-card text-card-foreground rounded-2xl shadow-xl relative max-h-[90vh] overflow-y-auto`}
+        className={`relative flex max-h-[92vh] w-full ${widthMap[maxWidth]} flex-col overflow-hidden rounded-2xl bg-card text-card-foreground shadow-xl`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          {title ? <h2 className="text-lg font-semibold">{title}</h2> : <div />}
+        <div className="flex shrink-0 items-center justify-between border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
+          {title ? <h2 className="text-base font-semibold sm:text-lg">{title}</h2> : <div />}
 
           <button
             onClick={onClose}
-            className="text-muted-foreground hover:text-foreground text-lg"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Tutup modal"
           >
-            ✕
+            x
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-6 py-6">{children}</div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">{children}</div>
 
-        {/* Footer (Optional) */}
         {footer && (
-          <div className="px-6 py-4 border-t bg-muted rounded-b-2xl">
+          <div className="shrink-0 rounded-b-2xl border-t bg-muted px-4 py-3 sm:px-6 sm:py-4">
             {footer}
           </div>
         )}

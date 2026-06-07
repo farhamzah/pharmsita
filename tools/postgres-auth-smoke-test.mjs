@@ -23,6 +23,10 @@ const sqlFiles = [
   path.join(rootDir, "backend", "database", "migrations", "002_permissions_and_workflow.sql"),
   path.join(rootDir, "backend", "database", "migrations", "003_multi_role_first_login.sql"),
   path.join(rootDir, "backend", "database", "migrations", "004_final_project_registration.sql"),
+  path.join(rootDir, "backend", "database", "migrations", "005_guidance_type_materials.sql"),
+  path.join(rootDir, "backend", "database", "migrations", "006_audit_export_guard.sql"),
+  path.join(rootDir, "backend", "database", "migrations", "007_user_profile_contact.sql"),
+  path.join(rootDir, "backend", "database", "migrations", "008_role_profile_fields.sql"),
   path.join(rootDir, "backend", "database", "seeds", "001_demo_auth.sql"),
 ];
 
@@ -66,8 +70,12 @@ const formatError = (error) => {
   return String(error);
 };
 
-const request = async (method, pathName, { token, body, expectedStatus = 200 } = {}) => {
-  const headers = { Accept: "application/json" };
+const request = async (
+  method,
+  pathName,
+  { token, body, expectedStatus = 200, headers: extraHeaders = {} } = {}
+) => {
+  const headers = { Accept: "application/json", ...extraHeaders };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
@@ -277,7 +285,242 @@ const main = async () => {
         auditLogs.payload.data.some((entry) => entry.action === "AUTH_LOGIN_SUCCESS"),
       `items=${auditLogs.payload?.data?.length || 0}`
     );
-
+    const adminUsers = await addCheck("Admin list users before provisioning", "GET", "/admin/users", {
+      token: admin.accessToken,
+    });
+    const provisionedIdentifier = `task93user${Date.now()}`;
+    const provisionedPassword = "Task93pass!";
+    const resetPassword = "Task93reset!";
+    const provisionedEmail = `${provisionedIdentifier}@pharmsita.local`;
+    const updatedEmail = `${provisionedIdentifier}.updated@pharmsita.local`;
+    await addCheck(
+      "Admin create user rejects short password",
+      "POST",
+      "/admin/users",
+      {
+        token: admin.accessToken,
+        body: {
+          role: "mahasiswa",
+          identifier: `${provisionedIdentifier}-short`,
+          name: "Task 95 Short Password",
+          email: `${provisionedIdentifier}.short@pharmsita.local`,
+          status: "Aktif",
+          password: "short",
+        },
+        expectedStatus: 422,
+      }
+    );
+    const createdUser = await addCheck(
+      "Admin creates user with initial password",
+      "POST",
+      "/admin/users",
+      {
+        token: admin.accessToken,
+        body: {
+          role: "mahasiswa",
+          identifier: provisionedIdentifier,
+          name: "Task 93 Provisioned User",
+          email: provisionedEmail,
+          status: "Aktif",
+          password: provisionedPassword,
+        },
+        expectedStatus: 201,
+      }
+    );
+    await addCheck(
+      "Admin create user rejects duplicate identifier",
+      "POST",
+      "/admin/users",
+      {
+        token: admin.accessToken,
+        body: {
+          role: "mahasiswa",
+          identifier: provisionedIdentifier,
+          name: "Task 95 Duplicate User",
+          email: `${provisionedIdentifier}.duplicate@pharmsita.local`,
+          status: "Aktif",
+          password: provisionedPassword,
+        },
+        expectedStatus: 409,
+      }
+    );
+    const provisionedUser = createdUser.payload?.data;
+    assertPass(
+      "Provisioned user requires first login",
+      provisionedUser?.passwordStatus === "needs_activation" &&
+        provisionedUser?.forceChangeOnLogin === true &&
+        !("password" in (provisionedUser || {})),
+      `status=${provisionedUser?.passwordStatus || "-"}; force=${provisionedUser?.forceChangeOnLogin}`
+    );
+    const updatedUser = await addCheck(
+      "Admin updates single user metadata",
+      "PATCH",
+      `/admin/users/${provisionedUser?.id}`,
+      {
+        token: admin.accessToken,
+        body: {
+          name: "Task 93 Updated User",
+          email: updatedEmail,
+          programStudi: "S1 Farmasi",
+          angkatan: "2022",
+          kelas: "FA-22-93",
+        },
+      }
+    );
+    assertPass(
+      "Admin user update returns single updated user",
+      updatedUser.payload?.data?.name === "Task 93 Updated User" &&
+        updatedUser.payload?.data?.kelas === "FA-22-93",
+      `name=${updatedUser.payload?.data?.name || "-"}; kelas=${updatedUser.payload?.data?.kelas || "-"}`
+    );
+    const inactiveUser = await addCheck(
+      "Admin deactivates single user",
+      "PATCH",
+      `/admin/users/${provisionedUser?.id}/status`,
+      {
+        token: admin.accessToken,
+        body: { status: "Nonaktif" },
+      }
+    );
+    assertPass(
+      "Admin status update returns inactive user",
+      inactiveUser.payload?.data?.status === "Nonaktif",
+      `status=${inactiveUser.payload?.data?.status || "-"}`
+    );
+    await addCheck("Inactive provisioned user cannot login", "POST", "/auth/login", {
+      body: { identifier: provisionedIdentifier, password: provisionedPassword },
+      expectedStatus: 401,
+    });
+    const reactivatedUser = await addCheck(
+      "Admin reactivates single user",
+      "PATCH",
+      `/admin/users/${provisionedUser?.id}/status`,
+      {
+        token: admin.accessToken,
+        body: { status: "Aktif" },
+      }
+    );
+    assertPass(
+      "Admin status update returns active user",
+      reactivatedUser.payload?.data?.status === "Aktif",
+      `status=${reactivatedUser.payload?.data?.status || "-"}`
+    );
+    const resetUser = await addCheck(
+      "Admin resets single user password",
+      "POST",
+      `/admin/users/${provisionedUser?.id}/reset-password`,
+      {
+        token: admin.accessToken,
+        body: { password: resetPassword },
+      }
+    );
+    assertPass(
+      "Admin password reset requires activation",
+      resetUser.payload?.data?.passwordStatus === "needs_activation" &&
+        resetUser.payload?.data?.forceChangeOnLogin === true,
+      `status=${resetUser.payload?.data?.passwordStatus || "-"}; force=${resetUser.payload?.data?.forceChangeOnLogin}`
+    );
+    await addCheck("Old provisioned password rejected after reset", "POST", "/auth/login", {
+      body: { identifier: provisionedIdentifier, password: provisionedPassword },
+      expectedStatus: 401,
+    });
+    const provisionedLogin = await addCheck(
+      "Provisioned user can login with reset password",
+      "POST",
+      "/auth/login",
+      {
+        body: { identifier: provisionedIdentifier, password: resetPassword },
+      }
+    );
+    assertPass(
+      "Provisioned login returns first-login challenge",
+      provisionedLogin.payload?.requiresFirstLogin === true &&
+        !!provisionedLogin.payload?.loginChallengeId,
+      `requiresFirstLogin=${provisionedLogin.payload?.requiresFirstLogin}`
+    );
+    const provisionedFirstLogin = await addCheck(
+      "Provisioned user completes first login password change",
+      "POST",
+      "/auth/first-login",
+      {
+        body: {
+          loginChallengeId: provisionedLogin.payload?.loginChallengeId,
+          role: "mahasiswa",
+          newPassword: "Task93newpass!",
+        },
+      }
+    );
+    assertPass(
+      "Provisioned first login creates active session",
+      !!provisionedFirstLogin.payload?.accessToken &&
+        provisionedFirstLogin.payload?.user?.passwordStatus === "active" &&
+        provisionedFirstLogin.payload?.user?.forceChangeOnLogin === false,
+      `status=${provisionedFirstLogin.payload?.user?.passwordStatus || "-"}; force=${provisionedFirstLogin.payload?.user?.forceChangeOnLogin}`
+    );
+    const activatedMe = await addCheck("Activated user /auth/me opens profile session", "GET", "/auth/me", {
+      token: provisionedFirstLogin.payload?.accessToken,
+    });
+    assertPass(
+      "Activated profile session maps to provisioned user",
+      activatedMe.payload?.user?.identifier === provisionedIdentifier &&
+        activatedMe.payload?.user?.name === "Task 93 Updated User" &&
+        activatedMe.payload?.user?.passwordStatus === "active",
+      `identifier=${activatedMe.payload?.user?.identifier || "-"}; status=${activatedMe.payload?.user?.passwordStatus || "-"}`
+    );
+    const profileUpdate = await addCheck(
+      "Activated user updates profile contact",
+      "PATCH",
+      "/auth/profile",
+      {
+        token: provisionedFirstLogin.payload?.accessToken,
+        body: {
+          email: updatedEmail,
+          phone: "081234567890",
+          address: "Jl. Profil Standalone No. 90",
+          gender: "Laki-laki",
+          birthDate: "2002-02-20",
+          programStudi: "S1 Farmasi",
+          angkatan: "2022",
+          kelas: "FA-22-90",
+          skemaTA: "Skripsi",
+          jenisTA: "Penelitian",
+        },
+      }
+    );
+    assertPass(
+      "Profile update response is persistent user",
+      profileUpdate.payload?.user?.email === updatedEmail &&
+        profileUpdate.payload?.user?.phone === "081234567890" &&
+        profileUpdate.payload?.user?.address === "Jl. Profil Standalone No. 90" &&
+        profileUpdate.payload?.user?.birthDate === "2002-02-20" &&
+        profileUpdate.payload?.user?.programStudi === "S1 Farmasi" &&
+        profileUpdate.payload?.user?.kelas === "FA-22-90",
+      `email=${profileUpdate.payload?.user?.email || "-"}; phone=${profileUpdate.payload?.user?.phone || "-"}`
+    );
+    const profileReload = await addCheck("Reloaded /auth/profile keeps contact", "GET", "/auth/profile", {
+      token: provisionedFirstLogin.payload?.accessToken,
+    });
+    assertPass(
+      "Profile contact persisted after reload",
+        profileReload.payload?.user?.email === updatedEmail &&
+        profileReload.payload?.user?.phone === "081234567890" &&
+        profileReload.payload?.user?.address === "Jl. Profil Standalone No. 90" &&
+        profileReload.payload?.user?.kelas === "FA-22-90",
+      `email=${profileReload.payload?.user?.email || "-"}; phone=${profileReload.payload?.user?.phone || "-"}`
+    );
+    const adminUsersAfterProfile = await addCheck("Admin review sees updated profile fields", "GET", "/admin/users", {
+      token: admin.accessToken,
+    });
+    const reviewedProfile = adminUsersAfterProfile.payload?.data?.find(
+      (user) => user.identifier === provisionedIdentifier
+    );
+    assertPass(
+      "Admin profile review includes role-specific fields",
+      reviewedProfile?.email === updatedEmail &&
+        reviewedProfile?.phone === "081234567890" &&
+        reviewedProfile?.kelas === "FA-22-90",
+      `email=${reviewedProfile?.email || "-"}; kelas=${reviewedProfile?.kelas || "-"}`
+    );
     await addCheck("Logout revoked rotated refresh", "POST", "/auth/logout", {
       token: rotatedAccessToken,
       body: { refreshToken: rotatedRefreshToken },

@@ -103,4 +103,8 @@ export class UnsupportedPostgresFinalProjectRegistrationRepository
   validateRegistration() {
     return notImplemented("Final project registration");
   }
+
+  replaceSupervisorAssignmentsByStudentId() {
+    return notImplemented("Final project registration");
+  }
 }

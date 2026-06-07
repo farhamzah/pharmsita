@@ -1,4 +1,7 @@
+import crypto from "node:crypto";
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:http";
+import { config } from "../config";
+import { verifyAccessToken } from "../security/token";
 import { badRequest, HttpError, notFound, toErrorBody } from "./errors";
 import type { RouteResponse } from "./response";
 
@@ -7,10 +10,24 @@ type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export interface RouteContext {
   method: HttpMethod;
   path: string;
+  requestId: string;
   params: Record<string, string>;
   query: URLSearchParams;
   body: unknown;
   headers: IncomingHttpHeaders;
+}
+
+interface RequestActor {
+  userId: string;
+  role: string;
+}
+
+interface RequestLogContext {
+  requestId: string;
+  method: string;
+  path: string;
+  startedAt: number;
+  actor: RequestActor | null;
 }
 
 type RouteHandler = (context: RouteContext) => RouteResponse | Promise<RouteResponse>;
@@ -50,18 +67,34 @@ export class Router {
   }
 
   async handle(req: IncomingMessage, res: ServerResponse) {
+    const requestId = this.readRequestId(req.headers);
+    const startedAt = Date.now();
+    let method = req.method || "GET";
+    let path = new URL(req.url || "/", "http://localhost").pathname;
+    let actor: RequestActor | null = null;
+
     this.applyCors(req, res);
+    res.setHeader("X-Request-Id", requestId);
 
     if (req.method === "OPTIONS") {
       this.send(res, 204, null);
+      this.logRequest({
+        requestId,
+        method,
+        path,
+        startedAt,
+        actor,
+      }, 204);
       return;
     }
 
     try {
-      const method = this.readMethod(req.method);
+      const routeMethod = this.readMethod(req.method);
+      method = routeMethod;
       const requestUrl = new URL(req.url || "/", "http://localhost");
-      const path = requestUrl.pathname;
-      const match = this.findRoute(method, path);
+      path = requestUrl.pathname;
+      actor = this.readActor(req.headers);
+      const match = this.findRoute(routeMethod, path);
 
       if (!match) {
         throw notFound(`Route ${method} ${path} tidak ditemukan.`);
@@ -69,17 +102,32 @@ export class Router {
 
       const body = await this.readJsonBody(req);
       const result = await match.route.handler({
-        method,
+        method: routeMethod,
         path,
+        requestId,
         params: match.params,
         query: requestUrl.searchParams,
         body,
         headers: req.headers,
       });
 
-      this.send(res, result.status, result.body);
+      this.send(res, result.status, result.body, result.headers);
+      this.logRequest({
+        requestId,
+        method,
+        path,
+        startedAt,
+        actor,
+      }, result.status);
     } catch (error) {
-      this.handleError(res, error);
+      const status = this.handleError(res, error, requestId);
+      this.logRequest({
+        requestId,
+        method,
+        path,
+        startedAt,
+        actor,
+      }, status, error);
     }
   }
 
@@ -146,6 +194,39 @@ export class Router {
     return path.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
   }
 
+  private readRequestId(headers: IncomingHttpHeaders) {
+    const raw = headers["x-request-id"];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    const trimmed = typeof value === "string" ? value.trim() : "";
+
+    if (trimmed && /^[a-zA-Z0-9._:-]{8,128}$/.test(trimmed)) {
+      return trimmed;
+    }
+
+    return crypto.randomUUID();
+  }
+
+  private readActor(headers: IncomingHttpHeaders): RequestActor | null {
+    const authorization = headers.authorization;
+    if (!authorization || !authorization.startsWith("Bearer ")) {
+      return null;
+    }
+
+    const payload = verifyAccessToken(
+      authorization.slice("Bearer ".length),
+      config.authSecret
+    );
+
+    if (!payload) {
+      return null;
+    }
+
+    return {
+      userId: payload.sub,
+      role: payload.role,
+    };
+  }
+
   private async readJsonBody(req: IncomingMessage) {
     const chunks: Buffer[] = [];
 
@@ -180,29 +261,93 @@ export class Router {
 
     res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.setHeader("Vary", "Origin");
   }
 
-  private send(res: ServerResponse, status: number, body: unknown) {
+  private send(
+    res: ServerResponse,
+    status: number,
+    body: unknown,
+    headers: Record<string, string> = {}
+  ) {
     res.statusCode = status;
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.end(JSON.stringify(body));
-  }
+    Object.entries(headers).forEach(([key, value]) => {
+      res.setHeader(key, value);
+    });
 
-  private handleError(res: ServerResponse, error: unknown) {
-    if (error instanceof HttpError) {
-      this.send(res, error.status, toErrorBody(error));
+    const contentType = res.getHeader("Content-Type");
+    if (typeof body === "string" && typeof contentType === "string" && !contentType.includes("application/json")) {
+      res.end(body);
       return;
     }
 
-    console.error(error);
+    if (!contentType) {
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+    }
+    res.end(JSON.stringify(body));
+  }
+
+  private handleError(res: ServerResponse, error: unknown, requestId: string) {
+    if (error instanceof HttpError) {
+      this.send(res, error.status, toErrorBody(error, requestId));
+      return error.status;
+    }
+
+    console.error(JSON.stringify({
+      level: "error",
+      event: "request.error",
+      requestId,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      timestamp: new Date().toISOString(),
+    }));
     this.send(res, 500, {
       error: {
         code: "INTERNAL_ERROR",
         message: "Terjadi kesalahan server.",
+        requestId,
       },
     });
+    return 500;
+  }
+
+  private logRequest(
+    context: RequestLogContext,
+    status: number,
+    error?: unknown
+  ) {
+    const level = status >= 500 ? "error" : status >= 400 ? "warn" : "info";
+    const payload = {
+      level,
+      event: "request.completed",
+      requestId: context.requestId,
+      method: context.method,
+      path: context.path,
+      status,
+      durationMs: Date.now() - context.startedAt,
+      actor: context.actor
+        ? {
+            userId: context.actor.userId,
+            role: context.actor.role,
+          }
+        : null,
+      errorCode: error instanceof HttpError ? error.code : undefined,
+      timestamp: new Date().toISOString(),
+    };
+
+    const line = JSON.stringify(payload);
+    if (level === "error") {
+      console.error(line);
+      return;
+    }
+
+    if (level === "warn") {
+      console.warn(line);
+      return;
+    }
+
+    console.log(line);
   }
 }

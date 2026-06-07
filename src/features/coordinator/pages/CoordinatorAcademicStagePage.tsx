@@ -5,7 +5,10 @@ import { SectionCard } from '../../../components/ui/SectionCard';
 import DataTable from '../../../components/ui/DataTable';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { coordinatorStudentMock } from '../../../mock-data/ui-mocks';
-import { coordinatorWorkflowApi } from '../../../core/api/domain';
+import {
+  coordinatorWorkflowApi,
+  type StudentDirectoryItem,
+} from '../../../core/api/domain';
 
 // Import Student components for monitoring
 import { InteractiveStepper } from '../../student/components/dashboard/InteractiveStepper';
@@ -50,7 +53,29 @@ const STEP_DESCRIPTIONS: Record<string, string> = {
   'revisi-sidang': 'Selesaikan perbaikan naskah final Tugas Akhir dan kumpulkan untuk finalisasi kelulusan.'
 };
 
+interface CoordinatorStudentRow {
+  id: string;
+  name: string;
+  nim: string;
+  title: string;
+  status?: string;
+  stage: string;
+  activeStepId?: StepId | "selesai" | null;
+  isCompleted?: boolean;
+  programStudi?: string;
+  angkatan?: string;
+  kelas?: string;
+}
+
 const mapStudentToStepId = (student: any): string => {
+  if (student.activeStepId) {
+    return student.activeStepId;
+  }
+
+  if (student.isCompleted || student.stage === "Selesai") {
+    return "selesai";
+  }
+
   switch (student.id) {
     case "1": return "sidang-proposal";
     case "2": return "bimbingan-pra-sidang";
@@ -70,6 +95,31 @@ const mapStudentToStepId = (student: any): string => {
       return "pendaftaran-ta";
   }
 };
+
+const mapLegacyStudent = (student: any): CoordinatorStudentRow => ({
+  id: student.id,
+  name: student.name,
+  nim: student.nim,
+  title: student.title,
+  status: student.status,
+  stage: student.stage || student.tahapan || "",
+});
+
+const mapDirectoryStudent = (student: StudentDirectoryItem): CoordinatorStudentRow => ({
+  id: student.id,
+  name: student.name,
+  nim: student.nim || student.identifier,
+  title: student.thesisTitle || "Tugas Akhir belum diajukan",
+  status: student.isCompleted ? "Lulus" : student.activeStepStatus || "Sedang Berjalan",
+  stage: student.activeStepLabel,
+  activeStepId: student.isCompleted ? "selesai" : student.activeStepId || "pendaftaran-ta",
+  isCompleted: student.isCompleted,
+  programStudi: student.programStudi,
+  angkatan: student.angkatan,
+  kelas: student.kelas,
+});
+
+const initialCoordinatorStudents = coordinatorStudentMock.map(mapLegacyStudent);
 
 const getStepsForStudent = (student: any): StudentStep[] => {
   const currentStepId = mapStudentToStepId(student);
@@ -114,6 +164,9 @@ export const CoordinatorAcademicStagePage: React.FC = () => {
   const [isShowingProfile, setIsShowingProfile] = useState<boolean>(false);
   const [apiSteps, setApiSteps] = useState<StudentStep[] | null>(null);
   const [progressToast, setProgressToast] = useState<string | null>(null);
+  const [students, setStudents] = useState<CoordinatorStudentRow[]>(initialCoordinatorStudents);
+  const [isLoadingStudents, setIsLoadingStudents] = useState<boolean>(true);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
 
   useEffect(() => {
     const targetStudentId = sessionStorage.getItem('monitor_student_id');
@@ -126,11 +179,36 @@ export const CoordinatorAcademicStagePage: React.FC = () => {
     }
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+
+    coordinatorWorkflowApi
+      .listStudents()
+      .then((response) => {
+        if (!mounted) return;
+        setStudents(response.data.map(mapDirectoryStudent));
+        setDirectoryError(null);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setDirectoryError("Directory backend belum tersedia, memakai data demo lokal.");
+      })
+      .finally(() => {
+        if (mounted) {
+          setIsLoadingStudents(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   // List View Filter States
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStage, setSelectedStage] = useState('all');
 
-  const filteredData = coordinatorStudentMock.filter(student => {
+  const filteredData = students.filter(student => {
     const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           student.nim.includes(searchTerm);
     const studentStepId = mapStudentToStepId(student);
@@ -173,7 +251,7 @@ export const CoordinatorAcademicStagePage: React.FC = () => {
     )},
   ];
 
-  const selectedStudent = coordinatorStudentMock.find(s => s.id === selectedStudentId);
+  const selectedStudent = students.find(s => s.id === selectedStudentId);
 
   const getStudentProfile = (student: any): StudentProfile => {
     const existing = mockStudentProfiles.find(p => p.nim === student.nim || p.name === student.name);
@@ -186,20 +264,20 @@ export const CoordinatorAcademicStagePage: React.FC = () => {
       phone: '0812' + Math.floor(10000000 + Math.random() * 90000000),
       photo: `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random`,
       role: Roles.STUDENT,
-      status: student.tahapan === 'Selesai' ? 'Lulus' : 'Aktif',
+      status: student.isCompleted || student.stage === 'Selesai' ? 'Lulus' : 'Aktif',
       tanggalLahir: '2002-05-15',
       alamat: 'Jl. Kampus Universitas PharmSita, Tangerang',
       gender: student.name.toLowerCase().includes('sari') || student.name.toLowerCase().includes('lina') || student.name.toLowerCase().includes('lia') || student.name.toLowerCase().includes('aminah') || student.name.toLowerCase().includes('sisca') ? 'Perempuan' : 'Laki-laki',
       nim: student.nim,
-      programStudi: 'S1 Farmasi',
-      angkatan: student.nim.startsWith('13519') || student.nim === '121212121' ? '2019' : student.nim.startsWith('10123') ? '2021' : '2020',
-      kelas: 'FA-22-01',
+      programStudi: student.programStudi || 'S1 Farmasi',
+      angkatan: student.angkatan || (student.nim.startsWith('13519') || student.nim === '121212121' ? '2019' : student.nim.startsWith('10123') ? '2021' : '2020'),
+      kelas: student.kelas || 'FA-22-01',
       skemaTA: student.nim === '987654321' ? 'Non Skripsi' : 'Skripsi',
       jenisTA: student.nim === '987654321' ? 'MBKM' : 'Penelitian',
       judulTA: student.title,
       pembimbing1: 'Dr. Apt. Rina Marlina, M.Farm.',
       pembimbing2: 'Dr. Apt. Budi Santoso, M.Si.',
-      tahapanAktif: student.tahapan,
+      tahapanAktif: student.stage,
       statusPengajuan: 'Disetujui',
       linkBerkas: 'https://drive.google.com/file/d/mock-berkas-dynamic/view'
     };
@@ -271,22 +349,22 @@ export const CoordinatorAcademicStagePage: React.FC = () => {
         return <PendaftaranTACombined />;
         
       case "bimbingan-pra-proposal":
-        return <BimbinganWorkflow stageId={step.id} role="pembimbing" studentId={selectedStudentId || "1"} />;
+        return <BimbinganWorkflow stageId={step.id} role="pembimbing" studentId={selectedStudentId || "1"} useCoordinatorApi />;
         
       case "sidang-proposal":
-        return <SidangWorkflow stageId={step.id} role="dosen" />;
+        return <SidangWorkflow stageId={step.id} role="dosen" studentId={selectedStudentId || "1"} useCoordinatorApi />;
         
       case "revisi-proposal":
-        return <RevisiWorkflow stageId={step.id} role="dosen" />;
+        return <RevisiWorkflow stageId={step.id} role="dosen" studentId={selectedStudentId || "1"} useCoordinatorApi />;
         
       case "bimbingan-pra-sidang":
-        return <BimbinganWorkflow stageId={step.id} role="pembimbing" studentId={selectedStudentId || "1"} />;
+        return <BimbinganWorkflow stageId={step.id} role="pembimbing" studentId={selectedStudentId || "1"} useCoordinatorApi />;
         
       case "sidang":
-        return <SidangWorkflow stageId={step.id} role="dosen" />;
+        return <SidangWorkflow stageId={step.id} role="dosen" studentId={selectedStudentId || "1"} useCoordinatorApi />;
         
       case "revisi-sidang":
-        return <RevisiWorkflow stageId={step.id} role="dosen" />;
+        return <RevisiWorkflow stageId={step.id} role="dosen" studentId={selectedStudentId || "1"} useCoordinatorApi />;
         
       default:
         return <div className="p-4 text-center text-muted-foreground">Pilih langkah di sebelah kiri untuk melihat detail.</div>;
@@ -500,6 +578,12 @@ export const CoordinatorAcademicStagePage: React.FC = () => {
               </select>
             </div>
           </div>
+
+          {(isLoadingStudents || directoryError) && (
+            <div className="mb-4 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs font-semibold text-muted-foreground">
+              {isLoadingStudents ? "Memuat directory mahasiswa..." : directoryError}
+            </div>
+          )}
 
           <SectionCard title="Daftar Monitoring Mahasiswa" className="border-border/50">
             <div className="border border-border/50 rounded-lg overflow-hidden bg-card shadow-3xs">

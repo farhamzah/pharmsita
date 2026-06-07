@@ -11,6 +11,12 @@ import {
 } from "../../validation/request-validators";
 import { auditService } from "../audit/audit-service";
 import { authService } from "../auth/auth-service";
+import {
+  assertRevisionReadyForFinalUpload,
+  buildRevisionCompletionGateStatus,
+  getRevisionCompletionGateStatus,
+  recordRevisionCompletionGateAudit,
+} from "./revision-completion-gate";
 
 const readStage = (stageId: string) => stageId as RevisionStage;
 
@@ -18,6 +24,23 @@ export const registerRevisionRoutes = (router: Router) => {
   router.get("/students/me/revisions/:stageId", async ({ params, headers }) => {
     const actor = await authService.requirePermission(headers, "student.workflow.read");
     return json({ data: await studentWorkflowRepository.getRevision(actor.id, readStage(params.stageId)) });
+  });
+
+  router.get("/students/me/revisions/:stageId/completion-gate", async ({ params, headers }) => {
+    const actor = await authService.requirePermission(headers, "student.workflow.read");
+    const stageId = readStage(params.stageId);
+    const gate = await getRevisionCompletionGateStatus(actor.id, stageId);
+
+    await recordRevisionCompletionGateAudit({
+      actor,
+      action: "REVISION_COMPLETION_GATE_READ",
+      studentId: actor.id,
+      stageId,
+      gate,
+      reason: "Student read revision completion gate.",
+    });
+
+    return json({ data: gate });
   });
 
   router.patch("/students/me/revisions/:stageId/items/:itemId/status", async ({ body, params, headers }) => {
@@ -136,6 +159,20 @@ export const registerRevisionRoutes = (router: Router) => {
     const stageId = readStage(params.stageId);
     const { fileName } = validateFinalFile(body);
     const before = await studentWorkflowRepository.getRevision(actor.id, stageId);
+    const gateBefore = buildRevisionCompletionGateStatus(before);
+    await recordRevisionCompletionGateAudit({
+      actor,
+      action: gateBefore.readyForFinalUpload
+        ? "REVISION_COMPLETION_GATE_ALLOWED"
+        : "REVISION_COMPLETION_GATE_BLOCKED",
+      studentId: actor.id,
+      stageId,
+      gate: gateBefore,
+      reason: gateBefore.readyForFinalUpload
+        ? "Final file upload gate allowed."
+        : gateBefore.finalUploadBlockingReasons.join("; "),
+    });
+    assertRevisionReadyForFinalUpload(before);
     const after = await studentWorkflowRepository.updateRevision(actor.id, stageId, (workflow) => {
       workflow.finalFile = fileName;
       workflow.submittedAt = new Date().toISOString();

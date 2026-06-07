@@ -4,6 +4,7 @@ import type { Router } from "../../http/router";
 import {
   validateFirstLoginRequest,
   validateLoginRequest,
+  validateProfileUpdate,
   validateRefreshRequest,
   validateRoleSelectionRequest,
 } from "../../validation/request-validators";
@@ -27,6 +28,14 @@ export const registerAuthRoutes = (router: Router) => {
 
   router.get("/auth/me", async ({ headers }) => {
     return json(await authService.me(headers));
+  });
+
+  router.get("/auth/profile", async ({ headers }) => {
+    return json(await authService.me(headers));
+  });
+
+  router.patch("/auth/profile", async ({ body, headers }) => {
+    return json(await authService.updateProfile(headers, validateProfileUpdate(body)));
   });
 
   router.post("/auth/refresh", async ({ body }) => {

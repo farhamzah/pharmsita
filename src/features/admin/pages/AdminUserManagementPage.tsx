@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import ContentWrapper from '../../../components/ContentWrapper';
 import MainLayout from '../../../layouts/MainLayout';
 import DataTable from '../../../components/ui/DataTable';
@@ -12,10 +12,139 @@ import {
 import {
   adminApi,
 } from '../../../core/api/domain';
+import { ApiError } from '../../../core/api/api-types';
 import {
   loadAdminAccounts,
-  saveAdminAccounts,
+  type AdminAccount,
 } from '../../../core/services/admin-data-service';
+
+type AdminRoleKey = 'mahasiswa' | 'dosen' | 'koordinator' | 'admin';
+type AdminRoleLabel = 'Mahasiswa' | 'Dosen' | 'Koordinator' | 'Admin';
+type FormErrors = Record<string, string>;
+
+const roleTabs: Array<'Semua Akun' | AdminRoleLabel> = ['Semua Akun', 'Mahasiswa', 'Dosen', 'Koordinator', 'Admin'];
+const roleOptions: AdminRoleLabel[] = ['Mahasiswa', 'Dosen', 'Koordinator', 'Admin'];
+
+const normalizeAdminRole = (role: unknown): AdminRoleKey => {
+  const normalized = String(role || '').trim().toLowerCase();
+
+  if (normalized === 'dosen') return 'dosen';
+  if (normalized === 'koordinator' || normalized === 'kordinator') return 'koordinator';
+  if (normalized === 'admin') return 'admin';
+  return 'mahasiswa';
+};
+
+const getRoleLabel = (role: unknown): AdminRoleLabel => {
+  const roleKey = normalizeAdminRole(role);
+
+  if (roleKey === 'dosen') return 'Dosen';
+  if (roleKey === 'koordinator') return 'Koordinator';
+  if (roleKey === 'admin') return 'Admin';
+  return 'Mahasiswa';
+};
+
+const getRoleThemeClasses = (role: unknown) => {
+  const roleKey = normalizeAdminRole(role);
+
+  if (roleKey === 'mahasiswa') {
+    return "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950/20 dark:border-blue-900 dark:text-blue-400";
+  }
+  if (roleKey === 'dosen') {
+    return "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900 dark:text-emerald-400";
+  }
+  if (roleKey === 'koordinator') {
+    return "bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-900 dark:text-indigo-400";
+  }
+  return "bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/20 dark:border-rose-900 dark:text-rose-400";
+};
+
+const getRoleAvatarGradient = (role: unknown) => {
+  const roleKey = normalizeAdminRole(role);
+
+  if (roleKey === 'mahasiswa') return 'from-blue-600 to-indigo-600';
+  if (roleKey === 'dosen') return 'from-emerald-600 to-teal-600';
+  if (roleKey === 'koordinator') return 'from-indigo-600 to-violet-600';
+  return 'from-rose-600 to-slate-700';
+};
+
+const isRole = (account: AdminAccount, role: AdminRoleKey) => normalizeAdminRole(account.role) === role;
+
+const getIdentifierLabel = (role: unknown) => {
+  const roleKey = normalizeAdminRole(role);
+
+  if (roleKey === 'mahasiswa') return 'NIM';
+  if (roleKey === 'dosen') return 'NIP / NIDN';
+  if (roleKey === 'koordinator') return 'NIP / ID';
+  return 'Username / ID Admin';
+};
+
+const getProgramOrDivision = (account: AdminAccount) => {
+  const roleKey = normalizeAdminRole(account.role);
+
+  if (roleKey === 'admin') return account.divisi || 'Administrasi PharmSITA';
+  return account.programStudi || 'S1 Farmasi';
+};
+
+const toTextList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const toTextValue = (value: unknown) => toTextList(value).join(', ');
+
+const apiFieldMap: Record<string, string> = {
+  'body.name': 'name',
+  'body.identifier': 'identifier',
+  'body.email': 'email',
+  'body.password': 'password',
+  'body.role': 'role',
+  'body.status': 'status',
+  'body.gender': 'gender',
+  'body.birthDate': 'birthDate',
+  'body.skemaTA': 'skemaTA',
+  'body.tingkatAkses': 'tingkatAkses',
+};
+
+const firstErrorMessage = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return value.map(String).filter(Boolean)[0];
+  }
+
+  return typeof value === 'string' ? value : undefined;
+};
+
+const parseAdminUserApiError = (error: unknown): FormErrors => {
+  if (!(error instanceof ApiError)) {
+    return { general: 'Akun gagal disimpan. Periksa data atau coba lagi.' };
+  }
+
+  const errors: FormErrors = {};
+  const details = error.payload.details;
+
+  if (details && typeof details === 'object' && !Array.isArray(details)) {
+    Object.entries(details as Record<string, unknown>).forEach(([key, value]) => {
+      const mappedKey = apiFieldMap[key] || key.replace(/^body\./, '');
+      const message = firstErrorMessage(value);
+      if (message) {
+        errors[mappedKey] = message;
+      }
+    });
+  }
+
+  if (error.payload.code === 'CONFLICT' && !errors.identifier) {
+    errors.identifier = error.payload.message;
+  }
+
+  return Object.keys(errors).length > 0
+    ? errors
+    : { general: error.payload.message || 'Akun gagal disimpan.' };
+};
 
 // Default form data template (simplified)
 const defaultFormData = {
@@ -26,12 +155,29 @@ const defaultFormData = {
   email: '',
   password: '',
   status: 'Aktif',
+  phone: '',
+  address: '',
+  gender: 'Laki-laki',
+  birthDate: '',
+  programStudi: 'S1 Farmasi',
+  angkatan: '',
+  kelas: '',
+  skemaTA: 'Skripsi',
+  jenisTA: 'Penelitian',
+  nidn: '',
+  bidangKeahlianText: '',
+  jabatanAkademik: '',
+  peranSistemText: '',
+  jabatan: '',
+  hakAksesUtamaText: '',
+  divisi: '',
+  tingkatAkses: 'Admin Prodi',
+  cakupanAksesText: '',
 };
 
 const AdminUserManagementPage: React.FC = () => {
-  const hasLoadedAccounts = useRef(false);
   // Mapped accounts state
-  const [accounts, setAccounts] = useState<any[]>(() => loadAdminAccounts());
+  const [accounts, setAccounts] = useState<AdminAccount[]>(() => loadAdminAccounts());
 
   useEffect(() => {
     let mounted = true;
@@ -48,25 +194,11 @@ const AdminUserManagementPage: React.FC = () => {
           setAccounts(loadAdminAccounts());
         }
       })
-      .finally(() => {
-        if (mounted) {
-          hasLoadedAccounts.current = true;
-        }
-      });
 
     return () => {
       mounted = false;
     };
   }, []);
-
-  // Keep account storage/API in sync whenever accounts change.
-  useEffect(() => {
-    if (!hasLoadedAccounts.current) return;
-
-    adminApi.replaceUsers(accounts).catch(() => {
-      saveAdminAccounts(accounts);
-    });
-  }, [accounts]);
 
   const [activeTab, setActiveTab] = useState<string>('Semua Akun');
   const [searchTerm, setSearchTerm] = useState('');
@@ -78,9 +210,10 @@ const AdminUserManagementPage: React.FC = () => {
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   
   // Selection states
-  const [selectedAccount, setSelectedAccount] = useState<any>(null);
-  const [accountToToggleStatus, setAccountToToggleStatus] = useState<any>(null);
+  const [selectedAccount, setSelectedAccount] = useState<AdminAccount | null>(null);
+  const [accountToToggleStatus, setAccountToToggleStatus] = useState<AdminAccount | null>(null);
   const [formData, setFormData] = useState(defaultFormData);
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
   
   // Password visibility state
   const [showPassword, setShowPassword] = useState(false);
@@ -95,159 +228,260 @@ const AdminUserManagementPage: React.FC = () => {
     }, 5000);
   };
 
+  const clearFormError = (field: string) => {
+    setFormErrors((prev) => {
+      if (!prev[field] && !prev.general) return prev;
+      const { [field]: _fieldError, general: _generalError, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  const updateFormField = (field: keyof typeof defaultFormData, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    clearFormError(field);
+  };
+
+  const validateFormBeforeSubmit = () => {
+    const errors: FormErrors = {};
+
+    if (!formData.name.trim()) {
+      errors.name = 'Nama lengkap wajib diisi.';
+    }
+
+    if (!formData.identifier.trim()) {
+      errors.identifier = 'Username / ID pengguna wajib diisi.';
+    }
+
+    if (formData.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      errors.email = 'Format email tidak valid.';
+    }
+
+    if (formData.password.trim() && formData.password.trim().length < 8) {
+      errors.password = isCreateModalOpen
+        ? 'Password awal minimal 8 karakter.'
+        : 'Password reset minimal 8 karakter.';
+    }
+
+    if (formData.birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(formData.birthDate)) {
+      errors.birthDate = 'Tanggal lahir harus format YYYY-MM-DD.';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   // Filter accounts by active tab and search query
   const filteredAccounts = accounts.filter(acc => {
-    const matchesTab = activeTab === 'Semua Akun' || acc.role === activeTab;
-    const matchesSearch = 
-      acc.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      acc.identifier.includes(searchTerm) || 
-      (acc.email && acc.email.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesTab = activeTab === 'Semua Akun' || getRoleLabel(acc.role) === activeTab;
+    const matchesSearch =
+      String(acc.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(acc.identifier || '').includes(searchTerm) ||
+      (acc.email && String(acc.email).toLowerCase().includes(searchTerm.toLowerCase()));
     return matchesTab && matchesSearch;
   });
 
   // Calculate tab sizes dynamically
   const getCountForTab = (tab: string) => {
     if (tab === 'Semua Akun') return accounts.length;
-    return accounts.filter(acc => acc.role === tab).length;
+    return accounts.filter(acc => getRoleLabel(acc.role) === tab).length;
   };
 
   // Open creation modal
   const handleOpenCreate = () => {
+    setFormErrors({});
     setFormData({
       ...defaultFormData,
       role: 'Mahasiswa',
+      programStudi: 'S1 Farmasi',
+      angkatan: '2022',
+      kelas: 'FA-22-01',
     });
     setShowPassword(false);
     setIsCreateModalOpen(true);
   };
 
   // Open edit modal
-  const handleOpenEdit = (account: any) => {
+  const handleOpenEdit = (account: AdminAccount) => {
+    setFormErrors({});
     setSelectedAccount(account);
     setFormData({
       id: account.id,
-      role: account.role,
+      role: getRoleLabel(account.role),
       name: account.name,
       identifier: account.identifier,
       email: account.email || '',
       password: '',
       status: account.status,
+      phone: account.phone || '',
+      address: account.address || account.alamat || '',
+      gender: account.gender || 'Laki-laki',
+      birthDate: account.birthDate || account.tanggalLahir || '',
+      programStudi: account.programStudi || 'S1 Farmasi',
+      angkatan: account.angkatan || '',
+      kelas: account.kelas || '',
+      skemaTA: account.skemaTA || 'Skripsi',
+      jenisTA: account.jenisTA || 'Penelitian',
+      nidn: account.nidn || account.identifier || '',
+      bidangKeahlianText: toTextValue(account.bidangKeahlian),
+      jabatanAkademik: account.jabatanAkademik || '',
+      peranSistemText: toTextValue(account.peranSistem),
+      jabatan: account.jabatan || '',
+      hakAksesUtamaText: toTextValue(account.hakAksesUtama),
+      divisi: account.divisi || '',
+      tingkatAkses: account.tingkatAkses || 'Admin Prodi',
+      cakupanAksesText: toTextValue(account.cakupanAkses),
     });
     setShowPassword(false);
     setIsEditModalOpen(true);
   };
 
   // Open detail modal
-  const handleOpenDetail = (account: any) => {
+  const handleOpenDetail = (account: AdminAccount) => {
     setSelectedAccount(account);
     setIsDetailModalOpen(true);
   };
 
   // Confirm lock/unlock account status
-  const handleConfirmToggleStatus = (account: any) => {
+  const handleConfirmToggleStatus = (account: AdminAccount) => {
     setAccountToToggleStatus(account);
     setIsConfirmModalOpen(true);
   };
 
   // Perform active/inactive status toggle
-  const handleToggleStatus = () => {
+  const handleToggleStatus = async () => {
     if (!accountToToggleStatus) return;
     
     const isDeactivating = accountToToggleStatus.status === 'Aktif';
     const updatedStatus = isDeactivating ? 'Nonaktif' : 'Aktif';
-    
-    setAccounts(prev => prev.map(acc => {
-      if (acc.id === accountToToggleStatus.id) {
-        return { ...acc, status: updatedStatus };
-      }
-      return acc;
-    }));
 
-    setIsConfirmModalOpen(false);
-    triggerToast(
-      `Akun ${accountToToggleStatus.name} berhasil ${isDeactivating ? 'dinonaktifkan' : 'diaktifkan kembali'}!`
-    );
-    setAccountToToggleStatus(null);
-  };
+    try {
+      const response = await adminApi.updateUserStatus(accountToToggleStatus.id, updatedStatus);
 
-  // Form submission handler
-  const handleFormSubmit = (e: React.FormEvent, mode: 'create' | 'edit') => {
-    e.preventDefault();
-
-    if (!formData.name || !formData.identifier) {
-      alert('Nama Lengkap dan Username / ID Pengguna wajib diisi!');
-      return;
-    }
-
-    if (mode === 'create') {
-      const hasInitialPassword = formData.password.trim().length > 0;
-
-      const newAccount = {
-        id: `acc_${Date.now()}`,
-        name: formData.name,
-        identifier: formData.identifier,
-        email: formData.email,
-        role: formData.role,
-        passwordStatus: hasInitialPassword ? 'Diatur awal' : 'Perlu aktivasi/reset',
-        passwordUpdatedAt: hasInitialPassword ? new Date().toISOString() : null,
-        status: 'Aktif',
-        // Sensible profile fallbacks so details modal still renders beautifully
-        phone: '',
-        gender: 'Laki-laki',
-        tanggalLahir: '2000-01-01',
-        alamat: '',
-        programStudi: 'S1 Farmasi',
-        ...(formData.role === 'Mahasiswa' ? {
-          angkatan: '2022',
-          kelas: 'FA-22-01',
-          skemaTA: 'Skripsi',
-          jenisTA: 'Penelitian',
-          tahapanAktif: 'Bimbingan',
-        } : formData.role === 'Dosen' ? {
-          jabatanAkademik: 'Lektor',
-          bidangKeahlian: 'Farmasetika',
-          kuotaPembimbing1: 8,
-          kuotaPembimbing2: 8,
-          kuotaTerpakaiPembimbing1: 0,
-          kuotaTerpakaiPembimbing2: 0,
-          peranSistem: ['Pembimbing'],
-        } : {
-          jabatan: 'Koordinator Tugas Akhir',
-          hakAksesUtama: ['Validasi Pengajuan Tugas Akhir'],
-        })
-      };
-
-      setAccounts(prev => [newAccount, ...prev]);
-      setIsCreateModalOpen(false);
-      triggerToast(
-        `Akun ${formData.name} berhasil dibuat. Password tidak disimpan atau ditampilkan ulang.`
-      );
-    } else {
-      const shouldResetPassword = formData.password.trim().length > 0;
-      // Edit mode submit
       setAccounts(prev => prev.map(acc => {
-        if (acc.id === selectedAccount.id) {
-          return {
-            ...acc,
-            name: formData.name,
-            identifier: formData.identifier,
-            email: formData.email,
-            ...(shouldResetPassword
-              ? {
-                  passwordStatus: 'Reset diminta',
-                  passwordUpdatedAt: new Date().toISOString(),
-                }
-              : {}),
-          };
+        if (acc.id === accountToToggleStatus.id) {
+          return response.data;
         }
         return acc;
       }));
-      setIsEditModalOpen(false);
+
+      setIsConfirmModalOpen(false);
       triggerToast(
-        shouldResetPassword
-          ? `Akun ${formData.name} berhasil diperbarui dan password ditandai untuk reset.`
-          : `Akun ${formData.name} berhasil diperbarui!`
+        `Akun ${accountToToggleStatus.name} berhasil ${isDeactivating ? 'dinonaktifkan' : 'diaktifkan kembali'}!`
       );
+      setAccountToToggleStatus(null);
+    } catch {
+      triggerToast('Status akun gagal diperbarui. Silakan coba lagi.');
+    }
+  };
+
+  const buildRoleProfilePayload = (): Partial<AdminAccount> => {
+    const role = getRoleLabel(formData.role);
+    const commonProfile: Partial<AdminAccount> = {
+      phone: formData.phone,
+      address: formData.address,
+      alamat: formData.address,
+      gender: formData.gender,
+      birthDate: formData.birthDate,
+      tanggalLahir: formData.birthDate,
+    };
+
+    if (role === 'Mahasiswa') {
+      return {
+        ...commonProfile,
+        nim: formData.identifier,
+        programStudi: formData.programStudi,
+        angkatan: formData.angkatan,
+        kelas: formData.kelas,
+        skemaTA: formData.skemaTA,
+        jenisTA: formData.jenisTA,
+      };
+    }
+
+    if (role === 'Dosen') {
+      return {
+        ...commonProfile,
+        nidn: formData.nidn || formData.identifier,
+        programStudi: formData.programStudi,
+        bidangKeahlian: toTextList(formData.bidangKeahlianText),
+        jabatanAkademik: formData.jabatanAkademik,
+        peranSistem: toTextList(formData.peranSistemText),
+      };
+    }
+
+    if (role === 'Koordinator') {
+      return {
+        ...commonProfile,
+        programStudi: formData.programStudi,
+        jabatan: formData.jabatan,
+        hakAksesUtama: toTextList(formData.hakAksesUtamaText),
+      };
+    }
+
+    return {
+      ...commonProfile,
+      divisi: formData.divisi,
+      tingkatAkses: formData.tingkatAkses,
+      cakupanAkses: toTextList(formData.cakupanAksesText),
+    };
+  };
+
+  // Form submission handler
+  const handleFormSubmit = async (e: React.FormEvent, mode: 'create' | 'edit') => {
+    e.preventDefault();
+
+    if (!validateFormBeforeSubmit()) {
+      return;
+    }
+
+    setFormErrors({});
+
+    try {
+      if (mode === 'create') {
+        const hasInitialPassword = formData.password.trim().length > 0;
+
+        const newAccount: AdminAccount = {
+          name: formData.name,
+          identifier: formData.identifier,
+          email: formData.email,
+          role: formData.role,
+          ...(hasInitialPassword ? { password: formData.password.trim() } : {}),
+          status: 'Aktif',
+          ...buildRoleProfilePayload(),
+        };
+
+        const response = await adminApi.createUser(newAccount);
+        setAccounts(prev => [response.data, ...prev.filter((account) => account.id !== response.data.id)]);
+        setIsCreateModalOpen(false);
+        triggerToast(
+          `Akun ${formData.name} berhasil dibuat. Password tidak disimpan atau ditampilkan ulang.`
+        );
+      } else {
+        if (!selectedAccount) return;
+
+        const shouldResetPassword = formData.password.trim().length > 0;
+        const updateResponse = await adminApi.updateUser(selectedAccount.id, {
+          name: formData.name,
+          identifier: formData.identifier,
+          email: formData.email,
+          ...buildRoleProfilePayload(),
+        });
+        const finalAccount = shouldResetPassword
+          ? (await adminApi.resetUserPassword(selectedAccount.id, formData.password.trim())).data
+          : updateResponse.data;
+
+        setAccounts(prev => prev.map(acc => (
+          acc.id === selectedAccount.id ? finalAccount : acc
+        )));
+        setIsEditModalOpen(false);
+        triggerToast(
+          shouldResetPassword
+            ? `Akun ${formData.name} berhasil diperbarui dan password ditandai untuk reset.`
+            : `Akun ${formData.name} berhasil diperbarui!`
+        );
+      }
+    } catch (error) {
+      setFormErrors(parseAdminUserApiError(error));
+      triggerToast('Akun gagal disimpan. Periksa pesan pada form.');
     }
   };
 
@@ -255,10 +489,10 @@ const AdminUserManagementPage: React.FC = () => {
     { 
       key: 'name', 
       label: 'Nama Lengkap',
-      render: (row: any) => (
+      render: (row: AdminAccount) => (
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-primary shrink-0">
-            {row.name.substring(0, 2).toUpperCase()}
+            {String(row.name || '?').substring(0, 2).toUpperCase()}
           </div>
           <div>
             <p className="font-semibold text-foreground text-xs leading-snug">{row.name}</p>
@@ -270,25 +504,18 @@ const AdminUserManagementPage: React.FC = () => {
     { 
       key: 'identifier', 
       label: 'NIM / NIP',
-      render: (row: any) => (
+      render: (row: AdminAccount) => (
         <span className="font-mono text-xs font-semibold">{row.identifier}</span>
       )
     },
     { 
       key: 'role', 
       label: 'Role',
-      render: (row: any) => {
-        let themeClasses = "bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/20 dark:border-rose-900 dark:text-rose-400";
-        if (row.role === 'Mahasiswa') {
-          themeClasses = "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950/20 dark:border-blue-900 dark:text-blue-400";
-        } else if (row.role === 'Dosen') {
-          themeClasses = "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900 dark:text-emerald-400";
-        } else if (row.role === 'Koordinator') {
-          themeClasses = "bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-900 dark:text-indigo-400";
-        }
+      render: (row: AdminAccount) => {
+        const themeClasses = getRoleThemeClasses(row.role);
         return (
           <span className={`px-2 py-0.5 rounded border text-[10px] font-bold tracking-wide uppercase select-none ${themeClasses}`}>
-            {row.role}
+            {getRoleLabel(row.role)}
           </span>
         );
       }
@@ -296,7 +523,7 @@ const AdminUserManagementPage: React.FC = () => {
     { 
       key: 'status', 
       label: 'Status',
-      render: (row: any) => (
+      render: (row: AdminAccount) => (
         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border select-none ${
           row.status === 'Aktif' 
             ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900 dark:text-emerald-400' 
@@ -309,7 +536,7 @@ const AdminUserManagementPage: React.FC = () => {
     {
       key: 'actions',
       label: 'Aksi',
-      render: (row: any) => (
+      render: (row: AdminAccount) => (
         <div className="flex gap-2">
           <Button 
             variant="outline" 
@@ -360,7 +587,7 @@ const AdminUserManagementPage: React.FC = () => {
 
       <ContentWrapper
         title="Kelola Akun"
-        description="Manajemen akun civitas akademika Mahasiswa, Dosen, dan Koordinator."
+        description="Manajemen akun Mahasiswa, Dosen, Koordinator, dan Admin PharmSITA."
         headerRight={
           <Button className="flex items-center gap-2" onClick={handleOpenCreate}>
             <Plus size={16} /> Buat Akun Baru
@@ -369,7 +596,7 @@ const AdminUserManagementPage: React.FC = () => {
       >
         {/* Horizontal Sub Navigation Tabs */}
         <div className="flex border-b border-border mb-6 overflow-x-auto whitespace-nowrap scrollbar-none">
-          {['Semua Akun', 'Mahasiswa', 'Dosen', 'Koordinator'].map((roleTab) => {
+          {roleTabs.map((roleTab) => {
             const isActive = activeTab === roleTab;
             const count = getCountForTab(roleTab);
             return (
@@ -424,24 +651,26 @@ const AdminUserManagementPage: React.FC = () => {
         onClose={() => {
           setIsCreateModalOpen(false);
           setIsEditModalOpen(false);
+          setFormErrors({});
         }}
         title={isCreateModalOpen ? "Buat Akun Baru" : "Edit Informasi Akun"}
-        maxWidth="lg"
+        maxWidth="2xl"
         footer={
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
             <button
               type="button"
               onClick={() => {
                 setIsCreateModalOpen(false);
                 setIsEditModalOpen(false);
+                setFormErrors({});
               }}
-              className="px-4 py-2 border hover:bg-muted text-foreground font-semibold rounded-xl text-xs transition"
+              className="w-full rounded-xl border px-4 py-2 text-xs font-semibold text-foreground transition hover:bg-muted sm:w-auto"
             >
               Batal
             </button>
             <button
               onClick={(e) => handleFormSubmit(e, isCreateModalOpen ? 'create' : 'edit')}
-              className="px-5 py-2 bg-primary text-primary-foreground hover:opacity-90 font-bold rounded-xl text-xs transition"
+              className="w-full rounded-xl bg-primary px-5 py-2 text-xs font-bold text-primary-foreground transition hover:opacity-90 sm:w-auto"
             >
               {isCreateModalOpen ? "Buat Akun" : "Simpan Perubahan"}
             </button>
@@ -449,19 +678,26 @@ const AdminUserManagementPage: React.FC = () => {
         }
       >
         <form className="space-y-4">
+          {formErrors.general && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+              {formErrors.general}
+            </div>
+          )}
+
           {/* 1. Seleksi Role */}
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Role Akun</label>
             <select
               value={formData.role}
               disabled={isEditModalOpen}
-              onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
+              onChange={(e) => updateFormField('role', e.target.value)}
               className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition font-semibold"
             >
-              <option value="Mahasiswa">Mahasiswa</option>
-              <option value="Dosen">Dosen</option>
-              <option value="Koordinator">Koordinator</option>
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>{role}</option>
+              ))}
             </select>
+            {formErrors.role && <p className="text-[10px] font-semibold text-red-600">{formErrors.role}</p>}
           </div>
 
           {/* 2. Nama Lengkap */}
@@ -472,24 +708,26 @@ const AdminUserManagementPage: React.FC = () => {
               required
               placeholder="Nama lengkap civitas akademika..."
               value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              onChange={(e) => updateFormField('name', e.target.value)}
               className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
             />
+            {formErrors.name && <p className="text-[10px] font-semibold text-red-600">{formErrors.name}</p>}
           </div>
 
           {/* 3. Username / ID Pengguna */}
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
-              {formData.role === 'Mahasiswa' ? 'Username / ID Pengguna (NIM)' : formData.role === 'Dosen' ? 'Username / ID Pengguna (NIDN / NIP)' : 'Username / ID Pengguna (NIP / ID)'}
+              {formData.role === 'Mahasiswa' ? 'Username / ID Pengguna (NIM)' : formData.role === 'Dosen' ? 'Username / ID Pengguna (NIDN / NIP)' : formData.role === 'Koordinator' ? 'Username / ID Pengguna (NIP / ID)' : 'Username / ID Admin'}
             </label>
             <input
               type="text"
               required
-              placeholder={formData.role === 'Mahasiswa' ? 'Masukkan NIM...' : formData.role === 'Dosen' ? 'Masukkan NIDN/NIP...' : 'Masukkan NIP/ID koordinator...'}
+              placeholder={formData.role === 'Mahasiswa' ? 'Masukkan NIM...' : formData.role === 'Dosen' ? 'Masukkan NIDN/NIP...' : formData.role === 'Koordinator' ? 'Masukkan NIP/ID koordinator...' : 'Masukkan username admin...'}
               value={formData.identifier}
-              onChange={(e) => setFormData(prev => ({ ...prev, identifier: e.target.value }))}
+              onChange={(e) => updateFormField('identifier', e.target.value)}
               className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition font-mono font-semibold"
             />
+            {formErrors.identifier && <p className="text-[10px] font-semibold text-red-600">{formErrors.identifier}</p>}
           </div>
 
           {/* 4. Email (Opsional) */}
@@ -502,12 +740,237 @@ const AdminUserManagementPage: React.FC = () => {
               type="email"
               placeholder="contoh@pharmsita.ac.id"
               value={formData.email}
-              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+              onChange={(e) => updateFormField('email', e.target.value)}
               className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
             />
+            {formErrors.email && <p className="text-[10px] font-semibold text-red-600">{formErrors.email}</p>}
           </div>
 
-          {/* 5. Password awal / reset */}
+          {/* 5. Profil umum */}
+          <div className="space-y-3 border border-border/70 rounded-xl p-3 bg-muted/[0.08]">
+            <h4 className="text-[10px] font-bold text-foreground uppercase tracking-wider">Profil Umum</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">No. HP / WhatsApp</label>
+                <input
+                  type="text"
+                  value={formData.phone}
+                  onChange={(e) => updateFormField('phone', e.target.value)}
+                  className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Tanggal Lahir</label>
+                <input
+                  type="date"
+                  value={formData.birthDate}
+                  onChange={(e) => updateFormField('birthDate', e.target.value)}
+                  className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                />
+                {formErrors.birthDate && <p className="text-[10px] font-semibold text-red-600">{formErrors.birthDate}</p>}
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Jenis Kelamin</label>
+                <select
+                  value={formData.gender}
+                  onChange={(e) => updateFormField('gender', e.target.value)}
+                  className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                >
+                  <option value="Laki-laki">Laki-laki</option>
+                  <option value="Perempuan">Perempuan</option>
+                </select>
+                {formErrors.gender && <p className="text-[10px] font-semibold text-red-600">{formErrors.gender}</p>}
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Alamat</label>
+                <input
+                  type="text"
+                  value={formData.address}
+                  onChange={(e) => updateFormField('address', e.target.value)}
+                  className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 6. Profil role */}
+          <div className="space-y-3 border border-border/70 rounded-xl p-3 bg-muted/[0.08]">
+            <h4 className="text-[10px] font-bold text-foreground uppercase tracking-wider">
+              Profil {formData.role}
+            </h4>
+
+            {formData.role === 'Mahasiswa' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Program Studi</label>
+                  <input
+                    type="text"
+                    value={formData.programStudi}
+                    onChange={(e) => updateFormField('programStudi', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Angkatan</label>
+                  <input
+                    type="text"
+                    value={formData.angkatan}
+                    onChange={(e) => updateFormField('angkatan', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Kelas</label>
+                  <input
+                    type="text"
+                    value={formData.kelas}
+                    onChange={(e) => updateFormField('kelas', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Skema TA</label>
+                  <select
+                    value={formData.skemaTA}
+                    onChange={(e) => updateFormField('skemaTA', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  >
+                    <option value="Skripsi">Skripsi</option>
+                    <option value="Non Skripsi">Non Skripsi</option>
+                  </select>
+                  {formErrors.skemaTA && <p className="text-[10px] font-semibold text-red-600">{formErrors.skemaTA}</p>}
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Jenis TA</label>
+                  <input
+                    type="text"
+                    value={formData.jenisTA}
+                    onChange={(e) => updateFormField('jenisTA', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+              </div>
+            )}
+
+            {formData.role === 'Dosen' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">NIDN / NIP</label>
+                  <input
+                    type="text"
+                    value={formData.nidn}
+                    onChange={(e) => updateFormField('nidn', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Program Studi</label>
+                  <input
+                    type="text"
+                    value={formData.programStudi}
+                    onChange={(e) => updateFormField('programStudi', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Jabatan Akademik</label>
+                  <input
+                    type="text"
+                    value={formData.jabatanAkademik}
+                    onChange={(e) => updateFormField('jabatanAkademik', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Peran Sistem</label>
+                  <input
+                    type="text"
+                    value={formData.peranSistemText}
+                    onChange={(e) => updateFormField('peranSistemText', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Bidang Keahlian</label>
+                  <input
+                    type="text"
+                    value={formData.bidangKeahlianText}
+                    onChange={(e) => updateFormField('bidangKeahlianText', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+              </div>
+            )}
+
+            {formData.role === 'Koordinator' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Program Studi</label>
+                  <input
+                    type="text"
+                    value={formData.programStudi}
+                    onChange={(e) => updateFormField('programStudi', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Jabatan</label>
+                  <input
+                    type="text"
+                    value={formData.jabatan}
+                    onChange={(e) => updateFormField('jabatan', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Hak Akses Utama</label>
+                  <input
+                    type="text"
+                    value={formData.hakAksesUtamaText}
+                    onChange={(e) => updateFormField('hakAksesUtamaText', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+              </div>
+            )}
+
+            {formData.role === 'Admin' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Divisi</label>
+                  <input
+                    type="text"
+                    value={formData.divisi}
+                    onChange={(e) => updateFormField('divisi', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Tingkat Akses</label>
+                  <select
+                    value={formData.tingkatAkses}
+                    onChange={(e) => updateFormField('tingkatAkses', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  >
+                    <option value="Admin Prodi">Admin Prodi</option>
+                    <option value="Superadmin">Superadmin</option>
+                  </select>
+                  {formErrors.tingkatAkses && <p className="text-[10px] font-semibold text-red-600">{formErrors.tingkatAkses}</p>}
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Cakupan Akses</label>
+                  <input
+                    type="text"
+                    value={formData.cakupanAksesText}
+                    onChange={(e) => updateFormField('cakupanAksesText', e.target.value)}
+                    className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 7. Password awal / reset */}
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
               {isCreateModalOpen ? 'Password Awal' : 'Reset Password'}
@@ -517,7 +980,7 @@ const AdminUserManagementPage: React.FC = () => {
                 type={showPassword ? "text" : "password"}
                 placeholder={isCreateModalOpen ? "Opsional: isi password awal..." : "Opsional: isi password reset..."}
                 value={formData.password}
-                onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                onChange={(e) => updateFormField('password', e.target.value)}
                 className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl pl-3 pr-10 py-2.5 text-foreground bg-background transition font-mono"
               />
               <button
@@ -531,6 +994,7 @@ const AdminUserManagementPage: React.FC = () => {
             <p className="text-[9px] text-muted-foreground leading-relaxed mt-1">
               Demi keamanan, password tidak disimpan atau ditampilkan ulang di frontend. Kosongkan jika tidak ingin mengatur/reset password.
             </p>
+            {formErrors.password && <p className="text-[10px] font-semibold text-red-600">{formErrors.password}</p>}
           </div>
         </form>
       </BaseModal>
@@ -541,33 +1005,21 @@ const AdminUserManagementPage: React.FC = () => {
         open={isDetailModalOpen}
         onClose={() => setIsDetailModalOpen(false)}
         title="Detail Profil Pengguna"
-        maxWidth="lg"
+        maxWidth="2xl"
       >
         {selectedAccount && (
           <div className="space-y-6">
             {/* Header Identitas Card */}
             <div className="bg-muted/30 border border-border/80 rounded-2xl p-5 flex flex-col items-center text-center shadow-3xs relative overflow-hidden">
               {/* Role Indicator Banner */}
-              <div className={`absolute top-3 right-3 text-[9px] font-extrabold uppercase px-2 py-0.5 border rounded-md tracking-wider ${
-                selectedAccount.role === 'Mahasiswa' 
-                  ? 'bg-blue-50 border-blue-200 text-blue-700' 
-                  : selectedAccount.role === 'Dosen'
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                    : 'bg-indigo-50 border-indigo-200 text-indigo-700'
-              }`}>
-                {selectedAccount.role}
+              <div className={`absolute top-3 right-3 text-[9px] font-extrabold uppercase px-2 py-0.5 border rounded-md tracking-wider ${getRoleThemeClasses(selectedAccount.role)}`}>
+                {getRoleLabel(selectedAccount.role)}
               </div>
 
               {/* Avatar Container */}
               <div className="relative mb-3.5 mt-2">
-                <div className={`w-20 h-20 rounded-full flex items-center justify-center font-extrabold text-2xl text-white shadow-md overflow-hidden bg-gradient-to-br ${
-                  selectedAccount.role === 'Mahasiswa'
-                    ? 'from-blue-600 to-indigo-600'
-                    : selectedAccount.role === 'Dosen'
-                      ? 'from-emerald-600 to-teal-600'
-                      : 'from-indigo-600 to-purple-600'
-                }`}>
-                  {selectedAccount.name.substring(0, 2).toUpperCase()}
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center font-extrabold text-2xl text-white shadow-md overflow-hidden bg-gradient-to-br ${getRoleAvatarGradient(selectedAccount.role)}`}>
+                  {String(selectedAccount.name || '?').substring(0, 2).toUpperCase()}
                 </div>
               </div>
 
@@ -582,7 +1034,7 @@ const AdminUserManagementPage: React.FC = () => {
                   {selectedAccount.status}
                 </span>
                 <span className="text-[10px] text-muted-foreground font-semibold">
-                  Program Studi: {selectedAccount.programStudi || 'S1 Farmasi'}
+                  {isRole(selectedAccount, 'admin') ? 'Divisi' : 'Program Studi'}: {getProgramOrDivision(selectedAccount)}
                 </span>
               </div>
 
@@ -590,7 +1042,7 @@ const AdminUserManagementPage: React.FC = () => {
               <div className="w-full mt-4 pt-3.5 border-t border-border/60">
                 <div className="bg-card border rounded-xl p-2.5 flex flex-col gap-0.5 text-center text-xs">
                   <span className="text-[9px] text-muted-foreground uppercase font-bold tracking-wider">
-                    {selectedAccount.role === 'Mahasiswa' ? 'NIM' : selectedAccount.role === 'Dosen' ? 'NIP / NIDN' : 'NIP / ID'}
+                    {getIdentifierLabel(selectedAccount.role)}
                   </span>
                   <strong className="text-foreground/90 font-mono text-sm tracking-wide">{selectedAccount.identifier}</strong>
                 </div>
@@ -629,7 +1081,7 @@ const AdminUserManagementPage: React.FC = () => {
                   <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Tanggal Lahir</span>
                   <div className="flex items-center gap-1.5 font-semibold text-foreground/90">
                     <Calendar size={12} className="text-muted-foreground/80 shrink-0" />
-                    <span className="font-mono">{selectedAccount.tanggalLahir || '-'}</span>
+                    <span className="font-mono">{selectedAccount.birthDate || selectedAccount.tanggalLahir || '-'}</span>
                   </div>
                 </div>
               </div>
@@ -646,7 +1098,7 @@ const AdminUserManagementPage: React.FC = () => {
                 <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Alamat Domisili</span>
                 <div className="flex items-start gap-1.5 text-foreground/80 font-medium leading-relaxed">
                   <MapPin size={12} className="text-muted-foreground/80 shrink-0 mt-0.5" />
-                  <p>{selectedAccount.alamat || 'Alamat belum dilengkapi.'}</p>
+                  <p>{selectedAccount.address || selectedAccount.alamat || 'Alamat belum dilengkapi.'}</p>
                 </div>
               </div>
             </div>
@@ -654,7 +1106,7 @@ const AdminUserManagementPage: React.FC = () => {
             {/* Detail Akademik / Pekerjaan (Role Spesifik) */}
             <div className="space-y-4 pt-1">
               {/* MAHASISWA RENDER */}
-              {selectedAccount.role === 'Mahasiswa' && (
+              {isRole(selectedAccount, 'mahasiswa') && (
                 <>
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-widest border-b pb-2 flex items-center gap-1.5">
                     <BookOpen size={14} className="text-primary" /> Rincian Tugas Akhir
@@ -663,7 +1115,7 @@ const AdminUserManagementPage: React.FC = () => {
                   <div className="p-3.5 bg-muted/[0.15] border rounded-xl space-y-3.5 text-xs">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <span className="text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-muted-foreground select-none">
-                        {selectedAccount.skemaTA || 'Skripsi'} — {selectedAccount.jenisTA || 'Penelitian'}
+                        {selectedAccount.skemaTA || 'Skripsi'} - {selectedAccount.jenisTA || 'Penelitian'}
                       </span>
                       <span className="text-[9px] font-extrabold text-primary bg-primary/[0.05] border border-primary/10 px-2.5 py-0.5 rounded-full select-none uppercase tracking-wide">
                         Tahap: {selectedAccount.tahapanAktif || 'Bimbingan'}
@@ -692,7 +1144,7 @@ const AdminUserManagementPage: React.FC = () => {
               )}
 
               {/* DOSEN RENDER */}
-              {selectedAccount.role === 'Dosen' && (
+              {isRole(selectedAccount, 'dosen') && (
                 <>
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-widest border-b pb-2 flex items-center gap-1.5">
                     <Briefcase size={14} className="text-primary" /> Otoritas & Kapasitas Bimbingan
@@ -708,7 +1160,7 @@ const AdminUserManagementPage: React.FC = () => {
                       <div className="p-3 bg-muted/20 border rounded-xl space-y-1">
                         <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Peran dalam Sistem</span>
                         <div className="flex gap-1 flex-wrap mt-1">
-                          {selectedAccount.peranSistem && (Array.isArray(selectedAccount.peranSistem) ? selectedAccount.peranSistem : [selectedAccount.peranSistem]).map((peran: string, i: number) => (
+                          {toTextList(selectedAccount.peranSistem).map((peran: string, i: number) => (
                             <span key={i} className="text-[9px] font-bold px-1.5 py-0.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded">
                               {peran}
                             </span>
@@ -720,9 +1172,7 @@ const AdminUserManagementPage: React.FC = () => {
                     <div className="p-3 bg-muted/20 border rounded-xl space-y-1 text-xs">
                       <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Fokus Keahlian & Riset</span>
                       <div className="flex gap-1.5 flex-wrap mt-1">
-                        {(selectedAccount.bidangKeahlian || '').split(',').map((bidang: string, i: number) => {
-                          const trimBidang = bidang.trim();
-                          if (!trimBidang) return null;
+                        {toTextList(selectedAccount.bidangKeahlian).map((trimBidang: string, i: number) => {
                           return (
                             <span key={i} className="text-[9px] font-bold px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-full">
                               {trimBidang}
@@ -767,7 +1217,7 @@ const AdminUserManagementPage: React.FC = () => {
               )}
 
               {/* KOORDINATOR RENDER */}
-              {selectedAccount.role === 'Koordinator' && (
+              {isRole(selectedAccount, 'koordinator') && (
                 <>
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-widest border-b pb-2 flex items-center gap-1.5">
                     <Shield size={14} className="text-primary" /> Otoritas Kebijakan Struktural
@@ -782,10 +1232,45 @@ const AdminUserManagementPage: React.FC = () => {
                     <div className="space-y-2 pt-1">
                       <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Daftar Hak Akses Manajemen</span>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {(selectedAccount.hakAksesUtama || []).map((hak: string, i: number) => (
+                        {toTextList(selectedAccount.hakAksesUtama).map((hak: string, i: number) => (
                           <div key={i} className="flex items-center gap-2 p-2 bg-muted/20 border rounded-lg text-foreground/80 font-medium">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                             <span>{hak}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ADMIN RENDER */}
+              {isRole(selectedAccount, 'admin') && (
+                <>
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-widest border-b pb-2 flex items-center gap-1.5">
+                    <Shield size={14} className="text-primary" /> Otoritas Administrasi
+                  </h4>
+
+                  <div className="space-y-3.5 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="p-3 bg-muted/20 border rounded-xl space-y-1">
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Divisi</span>
+                        <strong className="text-foreground/90 font-semibold block">{selectedAccount.divisi || 'Administrasi Akademik'}</strong>
+                      </div>
+
+                      <div className="p-3 bg-muted/20 border rounded-xl space-y-1">
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Tingkat Akses</span>
+                        <strong className="text-foreground/90 font-semibold block">{selectedAccount.tingkatAkses || 'Admin Prodi'}</strong>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-1">
+                      <span className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Cakupan Akses Review</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {toTextList(selectedAccount.cakupanAkses).map((cakupan: string, i: number) => (
+                          <div key={i} className="flex items-center gap-2 p-2 bg-muted/20 border rounded-lg text-foreground/80 font-medium">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <span>{cakupan}</span>
                           </div>
                         ))}
                       </div>

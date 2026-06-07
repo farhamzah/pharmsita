@@ -3,6 +3,9 @@ import ContentWrapper from '../../../components/ContentWrapper';
 import MainLayout from '../../../layouts/MainLayout';
 import DataTable from '../../../components/ui/DataTable';
 import Button from '../../../components/ui/Button';
+import { RevisionGateAuditPanel } from '../../shared/components/RevisionGateAuditPanel';
+import { AuditExportCleanupSchedulerStatusPanel } from '../../shared/components/AuditExportCleanupSchedulerStatusPanel';
+import { AuditExportAttemptPanel } from '../../shared/components/AuditExportAttemptPanel';
 
 const mockMonitoring = [
   { id: '1', name: 'Alif Nur', nim: '221011400215', stage: 'Seminar Proposal', prodi: 'Teknik Informatika', status: 'Disetujui Pembimbing' },
@@ -36,6 +39,15 @@ const AdminMonitoringPage: React.FC = () => {
             }
           ]}
         />
+        <div className="mt-6">
+          <RevisionGateAuditPanel scope="admin" />
+        </div>
+        <div className="mt-6">
+          <AuditExportCleanupSchedulerStatusPanel />
+        </div>
+        <div className="mt-6">
+          <AuditExportAttemptPanel />
+        </div>
       </ContentWrapper>
     </MainLayout>
   );

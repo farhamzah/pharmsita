@@ -188,3 +188,46 @@ Expected health response:
   "service": "pharmsita-api"
 }
 ```
+
+## Audit Export Attempt Cleanup
+
+Cleanup attempt export audit memakai backend API, jadi jalankan setelah backend HTTP mode hidup.
+
+Dry-run:
+
+```powershell
+$env:API_BASE_URL="http://localhost:4000/api/v1"
+$env:AUDIT_CLEANUP_ADMIN_IDENTIFIER="admin"
+$env:AUDIT_CLEANUP_ADMIN_PASSWORD="demo"
+npm.cmd run audit:cleanup:export-attempts
+```
+
+Execute:
+
+```powershell
+npm.cmd run audit:cleanup:export-attempts -- --execute --confirm-cleanup
+```
+
+Default script adalah `dryRun=true`; execute mencatat audit event `AUDIT_EXPORT_ATTEMPTS_CLEANED`.
+
+Scheduler optional:
+
+```powershell
+$env:AUDIT_EXPORT_CLEANUP_ENABLED="true"
+$env:AUDIT_EXPORT_CLEANUP_INTERVAL_SECONDS="86400"
+$env:AUDIT_EXPORT_ALLOWED_RETENTION_DAYS="30"
+$env:AUDIT_EXPORT_BLOCKED_RETENTION_DAYS="90"
+$env:AUDIT_EXPORT_CLEANUP_BATCH_SIZE="1000"
+```
+
+Biarkan `AUDIT_EXPORT_CLEANUP_ENABLED=false` untuk local QA biasa. Saat PostgreSQL aktif, scheduler memakai advisory lock agar hanya satu instance menjalankan cleanup.
+
+Status scheduler:
+
+```powershell
+$body = @{ identifier = "admin"; password = "demo" } | ConvertTo-Json
+$login = Invoke-RestMethod -Method Post -Uri "http://localhost:4000/api/v1/auth/login" -ContentType "application/json" -Body $body
+Invoke-RestMethod -Uri "http://localhost:4000/api/v1/admin/audit-export-attempts/cleanup/status" -Headers @{ Authorization = "Bearer $($login.accessToken)" }
+```
+
+Field penting: `enabled`, `running`, `lastResult`, `lastError`, dan `lastSkip`.

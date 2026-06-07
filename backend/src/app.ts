@@ -6,6 +6,7 @@ import { registerAuthRoutes } from "./modules/auth/auth-routes";
 import { registerHealthRoutes } from "./modules/health/health-routes";
 import { registerExamRoutes } from "./modules/student/exam-routes";
 import { registerFinalProjectRegistrationRoutes } from "./modules/final-project-registration/final-project-registration-routes";
+import { registerGuidanceRequestRoutes } from "./modules/guidance/guidance-request-routes";
 import { registerGuidanceRoutes } from "./modules/student/guidance-routes";
 import { registerProgressRoutes } from "./modules/student/progress-routes";
 import { registerRevisionRoutes } from "./modules/student/revision-routes";
@@ -23,6 +24,7 @@ export const createApp = () => {
   registerStudentWorkflowRoutes(router);
   registerProgressRoutes(router);
   registerGuidanceRoutes(router);
+  registerGuidanceRequestRoutes(router);
   registerExamRoutes(router);
   registerRevisionRoutes(router);
   registerRoleWorkflowRoutes(router);

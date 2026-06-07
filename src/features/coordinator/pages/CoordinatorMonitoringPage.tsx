@@ -7,6 +7,7 @@ import { coordinatorStudentMock } from '../../../mock-data/coordinator-ui-mocks'
 import { Search } from 'lucide-react';
 import { navigateTo } from '../../../router/Router';
 import { getCurrentRolePath } from '../../../lib/getCurrentRolePath';
+import { RevisionGateAuditPanel } from '../../shared/components/RevisionGateAuditPanel';
 
 export const CoordinatorMonitoringPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,6 +61,9 @@ export const CoordinatorMonitoringPage: React.FC = () => {
             <DataTable data={filteredData} columns={columns} />
           </div>
         </SectionCard>
+        <div className="mt-6">
+          <RevisionGateAuditPanel scope="coordinator" />
+        </div>
       </ContentWrapper>
     </RoleLayoutComponent>
   );

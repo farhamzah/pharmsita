@@ -2,10 +2,12 @@ import ContentWrapper from "../../../components/ContentWrapper";
 import MainLayout from "../../../layouts/MainLayout";
 import { UnifiedProfileView } from "../../../components/shared/UnifiedProfileView";
 import { mockStudentProfiles } from "../../../mock-data/profiles";
+import { useSessionProfile } from "../../shared/hooks/useSessionProfile";
 
 const DetailProfilPage = () => {
-  // Use the default student profile (Dimas Indra Jaya)
-  const studentProfile = mockStudentProfiles[0];
+  const { profile: studentProfile, isLoading, error, saveProfile } = useSessionProfile(
+    mockStudentProfiles[0]
+  );
 
   return (
     <MainLayout>
@@ -14,11 +16,11 @@ const DetailProfilPage = () => {
         description="Pantau detail informasi akun mahasiswa, data kelayakan akademik, serta progres persyaratan Tugas Akhir."
       >
         <div className="space-y-6 animate-in fade-in duration-500">
-          {/* Unified reusable profile component */}
-          <UnifiedProfileView initialProfile={studentProfile} />
-
-          {/* Requirement progress bar */}
-          {/* <ProgressPersyaratanSection /> */}
+          {isLoading && (
+            <p className="text-sm text-muted-foreground">Memuat profil session...</p>
+          )}
+          {error && <p className="text-sm text-amber-600">{error}</p>}
+          <UnifiedProfileView initialProfile={studentProfile} onSave={saveProfile} />
         </div>
       </ContentWrapper>
     </MainLayout>

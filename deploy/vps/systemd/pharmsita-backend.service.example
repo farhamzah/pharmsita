@@ -1,0 +1,40 @@
+[Unit]
+Description=PharmSITA backend API
+Documentation=file:/var/www/pharmsita/current/docs/production-deployment-runbook.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pharmsita
+Group=pharmsita
+WorkingDirectory=/var/www/pharmsita/current
+EnvironmentFile=/etc/pharmsita/backend.env
+
+ExecStartPre=/usr/bin/node backend/dist/server.js --check-production-env
+ExecStart=/usr/bin/node backend/dist/server.js
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+
+LogsDirectory=pharmsita
+StandardOutput=append:/var/log/pharmsita/backend.log
+StandardError=append:/var/log/pharmsita/backend-error.log
+SyslogIdentifier=pharmsita-backend
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/pharmsita
+CapabilityBoundingSet=
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

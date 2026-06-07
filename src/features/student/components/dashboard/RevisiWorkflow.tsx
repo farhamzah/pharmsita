@@ -9,88 +9,376 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isDemoModeEnabled } from "@/lib/demo-mode";
-import type { RevisiData } from "../../types/revisi";
-import { guidanceApi, lecturerWorkflowApi, progressApi, revisionApi } from "../../../../core/api/domain";
+import type {
+  RevisiData,
+  RevisiItem,
+  RevisionCompletionGateStatus,
+} from "../../types/revisi";
+import {
+  coordinatorWorkflowApi,
+  guidanceApi,
+  lecturerWorkflowApi,
+  progressApi,
+  revisionApi,
+  type GuidanceMaterial,
+  type GuidanceRequestAggregate,
+} from "../../../../core/api/domain";
+import { ApiError } from "../../../../core/api/api-types";
 
 interface RevisiWorkflowProps {
   stageId: "revisi-proposal" | "revisi-sidang";
   role?: "mahasiswa" | "dosen";
   studentId?: string;
   useLecturerApi?: boolean;
+  useCoordinatorApi?: boolean;
   onStatusChange?: () => void;
 }
+
+const formatCompletionGateError = (error: unknown, fallback: string) => {
+  if (!(error instanceof ApiError)) {
+    return fallback;
+  }
+
+  const details = error.payload.details as {
+    completionGate?: Partial<RevisionCompletionGateStatus>;
+    issues?: unknown;
+  } | undefined;
+  const gateReasons = Array.isArray(details?.completionGate?.blockingReasons)
+    ? details.completionGate.blockingReasons.filter((issue): issue is string => typeof issue === "string")
+    : [];
+  const issues = gateReasons.length > 0
+    ? gateReasons
+    : Array.isArray(details?.issues)
+    ? details.issues.filter((issue): issue is string => typeof issue === "string")
+    : [];
+
+  if (issues.length === 0) {
+    return error.payload.message || fallback;
+  }
+
+  return `${error.payload.message}\n${issues.map((issue) => `- ${issue}`).join("\n")}`;
+};
+
+const buildLocalCompletionGateStatus = (workflow: RevisiData): RevisionCompletionGateStatus => {
+  const doneCount = workflow.items.filter((item) => item.status === "done").length;
+  const blockingReasonByCode: Record<RevisionCompletionGateStatus["checks"][number]["code"], string> = {
+    REVISION_ITEMS_AVAILABLE: "Belum ada butir revisi yang bisa divalidasi.",
+    REVISION_ITEMS_DONE: "Semua butir revisi harus berstatus selesai.",
+    PENGUJI_1_APPROVED: "Approval Penguji 1 belum disetujui.",
+    PENGUJI_2_APPROVED: "Approval Penguji 2 belum disetujui.",
+    CHAIR_APPROVED: "Approval Ketua Sidang belum disetujui.",
+    FINAL_FILE_UPLOADED: "Dokumen final hasil revisi belum diunggah.",
+  };
+  const checks: RevisionCompletionGateStatus["checks"] = [
+    {
+      code: "REVISION_ITEMS_AVAILABLE",
+      label: "Butir revisi tersedia",
+      passed: workflow.items.length > 0,
+      detail:
+        workflow.items.length > 0
+          ? `${workflow.items.length} butir revisi tersedia`
+          : "Belum ada butir revisi yang bisa divalidasi.",
+      requiredFor: ["final-upload", "progress-completion"],
+    },
+    {
+      code: "REVISION_ITEMS_DONE",
+      label: "Semua butir revisi selesai",
+      passed: workflow.items.length > 0 && workflow.items.every((item) => item.status === "done"),
+      detail: `${doneCount}/${workflow.items.length} butir selesai`,
+      requiredFor: ["final-upload", "progress-completion"],
+    },
+    {
+      code: "PENGUJI_1_APPROVED",
+      label: "Approval Penguji 1",
+      passed: workflow.penguji1Approved,
+      detail: workflow.penguji1Approved ? "Disetujui" : "Belum disetujui",
+      requiredFor: ["final-upload", "progress-completion"],
+    },
+    {
+      code: "PENGUJI_2_APPROVED",
+      label: "Approval Penguji 2",
+      passed: workflow.penguji2Approved,
+      detail: workflow.penguji2Approved ? "Disetujui" : "Belum disetujui",
+      requiredFor: ["final-upload", "progress-completion"],
+    },
+    {
+      code: "CHAIR_APPROVED",
+      label: "Approval Ketua Sidang",
+      passed: workflow.ketuaSidangStatus === "approved",
+      detail:
+        workflow.ketuaSidangStatus === "approved"
+          ? "Disetujui"
+          : workflow.ketuaSidangStatus === "rejected"
+          ? "Ditolak"
+          : "Menunggu",
+      requiredFor: ["final-upload", "progress-completion"],
+    },
+    {
+      code: "FINAL_FILE_UPLOADED",
+      label: "Dokumen final hasil revisi",
+      passed: Boolean(workflow.finalFile),
+      detail: workflow.finalFile || "Belum diunggah",
+      requiredFor: ["progress-completion"],
+    },
+  ];
+  const finalUploadBlockingReasons = checks
+    .filter((check) => check.requiredFor.includes("final-upload") && !check.passed)
+    .map((check) => blockingReasonByCode[check.code]);
+  const progressCompletionBlockingReasons = checks
+    .filter((check) => check.requiredFor.includes("progress-completion") && !check.passed)
+    .map((check) => blockingReasonByCode[check.code]);
+
+  return {
+    stageId: workflow.stageId,
+    readyForFinalUpload: finalUploadBlockingReasons.length === 0,
+    readyForProgressCompletion: progressCompletionBlockingReasons.length === 0,
+    finalFile: workflow.finalFile,
+    finalUploadBlockingReasons,
+    progressCompletionBlockingReasons,
+    blockingReasons: progressCompletionBlockingReasons,
+    checks,
+    evaluatedAt: new Date().toISOString(),
+  };
+};
 
 export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
   stageId,
   role = "mahasiswa",
   studentId = "1",
   useLecturerApi = false,
+  useCoordinatorApi = false,
   onStatusChange,
 }) => {
   const isLecturerWorkflow = role === "dosen" && useLecturerApi;
+  const isCoordinatorWorkflow = role === "dosen" && useCoordinatorApi;
   const [data, setData] = useState<RevisiData>(() => revisionApi.getCached(stageId));
   const [docsLink, setDocsLink] = useState(() => {
-    const prevStageId = stageId === "revisi-proposal" ? "bimbingan-pra-proposal" : "bimbingan-pra-sidang";
-    return guidanceApi.getCached(prevStageId).googleDocsLink;
+    return guidanceApi.getCached(stageId).googleDocsLink;
   });
+  const [guidanceRequest, setGuidanceRequest] = useState<GuidanceRequestAggregate | null>(null);
 
   // States
   const [uploadFileMock, setUploadFileMock] = useState<string | null>(data.finalFile);
   const [showSimulator, setShowSimulator] = useState(false);
+  const [completionGateMessage, setCompletionGateMessage] = useState<string | null>(null);
+  const [completionGate, setCompletionGate] = useState<RevisionCompletionGateStatus>(() =>
+    buildLocalCompletionGateStatus(data)
+  );
+  const [isCompletingRevision, setIsCompletingRevision] = useState(false);
+
+  const readGuidanceRequest = () =>
+    isCoordinatorWorkflow
+      ? coordinatorWorkflowApi.getGuidanceRequestAggregate(studentId, stageId)
+      : isLecturerWorkflow
+      ? lecturerWorkflowApi.getGuidanceRequestAggregate(studentId, stageId)
+      : guidanceApi.getRequestAggregate(stageId);
+
+  const refreshGuidanceRequest = async () => {
+    const response = await readGuidanceRequest();
+    setGuidanceRequest(response.data);
+    setDocsLink(response.data?.googleDocsLink || "");
+    return response.data;
+  };
+
+  const readCompletionGate = () =>
+    isCoordinatorWorkflow
+      ? coordinatorWorkflowApi.getRevisionCompletionGate(studentId, stageId)
+      : isLecturerWorkflow
+      ? lecturerWorkflowApi.getRevisionCompletionGate(studentId, stageId)
+      : revisionApi.getCompletionGate(stageId);
+
+  const refreshCompletionGate = async (fallbackData = data) => {
+    try {
+      const response = await readCompletionGate();
+      setCompletionGate(response.data);
+      return response.data;
+    } catch {
+      const localGate = buildLocalCompletionGateStatus(fallbackData);
+      setCompletionGate(localGate);
+      return localGate;
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
-    const prevStageId = stageId === "revisi-proposal" ? "bimbingan-pra-proposal" : "bimbingan-pra-sidang";
-    const revisionRequest = isLecturerWorkflow
+    const revisionRequest = isCoordinatorWorkflow
+      ? coordinatorWorkflowApi.getRevision(studentId, stageId)
+      : isLecturerWorkflow
       ? lecturerWorkflowApi.getRevision(studentId, stageId)
       : revisionApi.get(stageId);
-    const guidanceRequest = isLecturerWorkflow
-      ? lecturerWorkflowApi.getGuidance(studentId, prevStageId)
-      : guidanceApi.get(prevStageId);
+    const guidanceRequestPromise = readGuidanceRequest();
+    const completionGateRequest = readCompletionGate();
 
-    Promise.allSettled([revisionRequest, guidanceRequest]).then((results) => {
+    Promise.allSettled([revisionRequest, guidanceRequestPromise, completionGateRequest]).then((results) => {
       if (!mounted) return;
 
-      const [revisionResult, guidanceResult] = results;
+      const [revisionResult, guidanceResult, completionGateResult] = results;
       if (revisionResult.status === "fulfilled") {
         setData(revisionResult.value.data);
         setUploadFileMock(revisionResult.value.data.finalFile);
+        if (completionGateResult.status !== "fulfilled") {
+          setCompletionGate(buildLocalCompletionGateStatus(revisionResult.value.data));
+        }
       }
       if (guidanceResult.status === "fulfilled") {
-        setDocsLink(guidanceResult.value.data.googleDocsLink);
+        setGuidanceRequest(guidanceResult.value.data);
+        setDocsLink(guidanceResult.value.data?.googleDocsLink || "");
+      }
+      if (completionGateResult.status === "fulfilled") {
+        setCompletionGate(completionGateResult.value.data);
       }
     });
 
     return () => {
       mounted = false;
     };
-  }, [stageId, studentId, isLecturerWorkflow]);
+  }, [stageId, studentId, isLecturerWorkflow, isCoordinatorWorkflow]);
 
   const refreshData = async () => {
-    const response = isLecturerWorkflow
+    const response = isCoordinatorWorkflow
+      ? await coordinatorWorkflowApi.getRevision(studentId, stageId)
+      : isLecturerWorkflow
       ? await lecturerWorkflowApi.getRevision(studentId, stageId)
       : await revisionApi.get(stageId);
     setData(response.data);
+    setUploadFileMock(response.data.finalFile);
+    await refreshCompletionGate(response.data);
+    await refreshGuidanceRequest().catch(() => undefined);
     if (onStatusChange) {
       onStatusChange();
     }
   };
 
-  const handleAjukanPenyelesaianDirect = async (itemId: number) => {
-    const response = await revisionApi.submitResolution(stageId, itemId, {
-      penyelesaian: "",
-      penyelesaianLink: "",
+  const getRevisionMaterialsForItem = (item: RevisiItem): GuidanceMaterial[] => {
+    const sourceId = item.sourceRevisionItemId;
+    return (guidanceRequest?.materials || [])
+      .filter(
+        (material) =>
+          material.materialType === "revision" &&
+          Boolean(sourceId) &&
+          material.sourceRevisionItemId === sourceId
+      )
+      .sort((left, right) => {
+        if (left.attemptNumber !== right.attemptNumber) {
+          return right.attemptNumber - left.attemptNumber;
+        }
+        const leftTime = left.submittedAt || left.createdAt || "";
+        const rightTime = right.submittedAt || right.createdAt || "";
+        return rightTime.localeCompare(leftTime);
+      });
+  };
+
+  const getRevisionMaterialForItem = (item: RevisiItem): GuidanceMaterial | null => {
+    return getRevisionMaterialsForItem(item)[0] || null;
+  };
+
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return "-";
+
+    return new Date(value).toLocaleString("id-ID", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const getEffectiveItemStatus = (item: RevisiItem): RevisiItem["status"] => {
+    const material = getRevisionMaterialForItem(item);
+    if (material?.status === "Valid") return "done";
+    if (material?.status === "Diajukan") return "in progress";
+    if (material?.status === "Ditolak") return "pending";
+    return item.status;
+  };
+
+  const handleSubmitGuidanceRequest = async () => {
+    const link =
+      docsLink ||
+      window.prompt("Masukkan link Google Docs bimbingan revisi:", docsLink || "") ||
+      "";
+    const trimmed = link.trim();
+
+    if (!trimmed) {
+      alert("Link Google Docs bimbingan revisi wajib diisi sebelum request dikirim.");
+      return;
+    }
+
+    const response = await guidanceApi.submitRequest(stageId, {
+      googleDocsLink: trimmed,
+      studentNote: "Pengajuan bimbingan revisi untuk penyelesaian butir revisi.",
+    });
+    setDocsLink(response.data.googleDocsLink);
+    await refreshGuidanceRequest();
+  };
+
+  const handleApproveGuidanceRequest = async () => {
+    if (!guidanceRequest?.id || isCoordinatorWorkflow) return;
+
+    const response = await lecturerWorkflowApi.validateGuidanceRequest(guidanceRequest.id, {
+      status: "Disetujui",
+      catatanDosen: "Bimbingan revisi disetujui.",
+    });
+    setDocsLink(response.data.googleDocsLink);
+    await refreshGuidanceRequest();
+  };
+
+  const handleAjukanPenyelesaianDirect = async (item: RevisiItem) => {
+    if (guidanceRequest?.status !== "Disetujui" || !guidanceRequest.id) {
+      alert("Request bimbingan revisi harus disetujui dosen sebelum penyelesaian dikirim.");
+      return;
+    }
+
+    if (!item.sourceRevisionItemId) {
+      alert("Item revisi belum memiliki UUID sumber. Muat ulang data revisi lalu coba lagi.");
+      return;
+    }
+
+    const existingMaterial = getRevisionMaterialForItem(item);
+    if (existingMaterial?.status === "Diajukan") {
+      alert("Penyelesaian revisi ini sudah diajukan dan menunggu validasi dosen.");
+      return;
+    }
+
+    const penyelesaian =
+      item.penyelesaian ||
+      `Penyelesaian revisi: ${item.topik}. Mahasiswa telah memperbaiki naskah sesuai catatan penguji.`;
+    const response = await revisionApi.submitResolution(stageId, item.id, {
+      penyelesaian,
+      penyelesaianLink: docsLink || guidanceRequest.googleDocsLink,
+    });
+    await guidanceApi.submitRevisionMaterial(guidanceRequest.id, item.sourceRevisionItemId, {
+      materialType: "revision",
+      sourceRevisionItemId: item.sourceRevisionItemId,
+      topic: item.topik,
+      content: penyelesaian,
     });
     setData(response.data);
+    await refreshCompletionGate(response.data);
+    await refreshGuidanceRequest();
     if (onStatusChange) {
       onStatusChange();
     }
   };
 
-  const handleApproveItem = async (itemId: number) => {
+  const handleApproveItem = async (item: RevisiItem) => {
+    if (isCoordinatorWorkflow) {
+      throw new Error("Coordinator revision view is read-only.");
+    }
+
+    const material = getRevisionMaterialForItem(item);
+    if (isLecturerWorkflow && guidanceRequest?.id && material?.id && material.status === "Diajukan") {
+      await lecturerWorkflowApi.validateGuidanceMaterial(guidanceRequest.id, material.id, {
+        status: "Valid",
+        catatanDosen: `Penyelesaian revisi ${item.id} valid.`,
+      });
+      await refreshData();
+      return;
+    }
+
     const itemResponse = isLecturerWorkflow
-      ? await lecturerWorkflowApi.updateRevisionItemStatus(studentId, stageId, itemId, "done")
-      : await revisionApi.updateItemStatus(stageId, itemId, "done");
+      ? await lecturerWorkflowApi.updateRevisionItemStatus(studentId, stageId, item.id, "done")
+      : await revisionApi.updateItemStatus(stageId, item.id, "done");
     
     // Auto toggle reviewer approvals if all items of a reviewer are done!
     const freshData = itemResponse.data;
@@ -128,7 +416,32 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
     await refreshData();
   };
 
+  const handleRejectItem = async (item: RevisiItem) => {
+    if (!isLecturerWorkflow || isCoordinatorWorkflow || !guidanceRequest?.id) {
+      return;
+    }
+
+    const material = getRevisionMaterialForItem(item);
+    if (!material?.id || material.status !== "Diajukan") {
+      alert("Belum ada material revisi yang menunggu validasi.");
+      return;
+    }
+
+    const note = window.prompt("Catatan penolakan penyelesaian revisi:", material.lecturerNote || "");
+    if (!note?.trim()) return;
+
+    await lecturerWorkflowApi.validateGuidanceMaterial(guidanceRequest.id, material.id, {
+      status: "Ditolak",
+      catatanDosen: note.trim(),
+    });
+    await refreshData();
+  };
+
   const handleToggleExaminerApproval = async (num: 1 | 2) => {
+    if (isCoordinatorWorkflow) {
+      throw new Error("Coordinator revision view is read-only.");
+    }
+
     const currentVal = num === 1 ? data.penguji1Approved : data.penguji2Approved;
     const payload = {
       role: num === 1 ? "penguji1" : "penguji2",
@@ -138,12 +451,17 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
       ? await lecturerWorkflowApi.updateRevisionApproval(studentId, stageId, payload)
       : await revisionApi.updateApproval(stageId, payload);
     setData(response.data);
+    await refreshCompletionGate(response.data);
     if (onStatusChange) {
       onStatusChange();
     }
   };
 
   const handleToggleKetuaSidangApproval = async (status: "pending" | "approved" | "rejected") => {
+    if (isCoordinatorWorkflow) {
+      throw new Error("Coordinator revision view is read-only.");
+    }
+
     const payload = {
       role: "ketua-sidang",
       status,
@@ -152,6 +470,7 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
       ? await lecturerWorkflowApi.updateRevisionApproval(studentId, stageId, payload)
       : await revisionApi.updateApproval(stageId, payload);
     setData(response.data);
+    await refreshCompletionGate(response.data);
     if (onStatusChange) {
       onStatusChange();
     }
@@ -160,16 +479,57 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
   const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const response = await revisionApi.uploadFinalFile(stageId, file.name);
-      setUploadFileMock(file.name);
-      setData(response.data);
-      if (onStatusChange) {
-        onStatusChange();
+      setCompletionGateMessage(null);
+
+      try {
+        const response = await revisionApi.uploadFinalFile(stageId, file.name);
+        setUploadFileMock(response.data.finalFile);
+        setData(response.data);
+        await refreshCompletionGate(response.data);
+        if (onStatusChange) {
+          onStatusChange();
+        }
+      } catch (error) {
+        const message = formatCompletionGateError(
+          error,
+          "Dokumen final revisi belum bisa diunggah. Periksa kembali seluruh syarat revisi."
+        );
+        setCompletionGateMessage(message);
+        alert(message);
+        await refreshData().catch(() => undefined);
+      } finally {
+        e.target.value = "";
       }
     }
   };
 
+  const handleCompleteRevisionStage = async () => {
+    setCompletionGateMessage(null);
+    setIsCompletingRevision(true);
+
+    try {
+      await progressApi.updateStepStatus(stageId, "completed");
+      await refreshData();
+      alert("Tahap revisi berhasil diselesaikan. Anda kini dapat melanjutkan ke tahap berikutnya.");
+    } catch (error) {
+      const message = formatCompletionGateError(
+        error,
+        "Tahap revisi belum bisa diselesaikan. Periksa kembali seluruh syarat revisi."
+      );
+      setCompletionGateMessage(message);
+      alert(message);
+      await refreshData().catch(() => undefined);
+    } finally {
+      setIsCompletingRevision(false);
+    }
+  };
+
   const handleResetRevisi = async () => {
+    if (isCoordinatorWorkflow) {
+      await refreshData();
+      return;
+    }
+
     if (isLecturerWorkflow) {
       await refreshData();
       return;
@@ -178,6 +538,7 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
     const response = await revisionApi.reset(stageId);
     setUploadFileMock(null);
     setData(response.data);
+    await refreshCompletionGate(response.data);
     if (onStatusChange) {
       onStatusChange();
     }
@@ -185,19 +546,98 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
 
   // Metrik counter
   const totalRevisi = data.items.length;
-  const completedRevisiCount = data.items.filter((i) => i.status === "done").length;
-  const progressPercent = Math.round((completedRevisiCount / totalRevisi) * 100);
+  const completedRevisiCount = data.items.filter((i) => getEffectiveItemStatus(i) === "done").length;
+  const progressPercent = totalRevisi === 0 ? 0 : Math.round((completedRevisiCount / totalRevisi) * 100);
+  const isGuidanceRequestApproved = guidanceRequest?.status === "Disetujui";
+  const isGuidanceRequestWaiting = guidanceRequest?.status === "Menunggu Validasi Dosen";
+  const guidanceRequestLabel = guidanceRequest
+    ? guidanceRequest.status
+    : "Belum Diajukan";
 
   // Approval penguji counter
   const approvedReviewersCount = (data.penguji1Approved ? 1 : 0) + (data.penguji2Approved ? 1 : 0);
 
 
-  // Tombol final upload aktif jika semua revisi dan approval disetujui
-  const isEligibleForUpload =
-    completedRevisiCount === totalRevisi &&
-    data.penguji1Approved &&
-    data.penguji2Approved &&
-    data.ketuaSidangStatus === "approved";
+  const isEligibleForUpload = completionGate.readyForFinalUpload;
+  const isCompletionGateReady = completionGate.readyForProgressCompletion;
+  const finalFileName = completionGate.finalFile || data.finalFile || uploadFileMock;
+  const completionGateChecks = completionGate.checks;
+  const completionGateBlockingReasons = completionGate.readyForProgressCompletion
+    ? []
+    : completionGate.readyForFinalUpload
+    ? completionGate.progressCompletionBlockingReasons
+    : completionGate.finalUploadBlockingReasons;
+  const completionGateStatusLabel = completionGate.readyForProgressCompletion
+    ? "Siap Diselesaikan"
+    : completionGate.readyForFinalUpload
+    ? "Siap Unggah Final"
+    : "Belum Lengkap";
+  const completionGatePanel = (
+    <div className="rounded-xl border border-border/70 bg-muted/10 p-3.5 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <span className="text-[10px] text-muted-foreground uppercase font-bold block">
+            Sinkronisasi Penyelesaian Revisi
+          </span>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {role === "mahasiswa"
+              ? "Status syarat unggah final dan penyelesaian tahap."
+              : "Status syarat unggah final dan completion gate mahasiswa."}
+          </p>
+        </div>
+        <span
+          className={cn(
+            "text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0",
+            isCompletionGateReady
+              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+              : completionGate.readyForFinalUpload
+              ? "bg-sky-500/10 border-sky-500/20 text-sky-600 dark:text-sky-400"
+              : "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400"
+          )}
+        >
+          {completionGateStatusLabel}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {completionGateChecks.map((check) => (
+          <div
+            key={check.label}
+            className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-card/60 px-3 py-2"
+          >
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-foreground truncate">{check.label}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{check.detail}</p>
+            </div>
+            <span
+              className={cn(
+                "text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0",
+                check.passed
+                  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                  : "bg-slate-500/10 border-slate-500/20 text-slate-500 dark:text-slate-400"
+              )}
+            >
+              {check.passed ? "OK" : "Menunggu"}
+            </span>
+          </div>
+        ))}
+      </div>
+      {completionGateBlockingReasons.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-[11px] font-medium leading-relaxed text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200">
+          <p className="font-bold mb-1">Alasan Belum Lengkap</p>
+          <ul className="space-y-1 list-disc pl-4">
+            {completionGateBlockingReasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {completionGateMessage && role === "mahasiswa" && (
+        <div className="rounded-lg border border-red-200 bg-red-50/70 p-3 text-[11px] font-medium leading-relaxed text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300 whitespace-pre-line">
+          {completionGateMessage}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -365,6 +805,8 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
                   onClick={async () => {
                     const response = await revisionApi.simulateAllApproved(stageId);
                     setData(response.data);
+                    await refreshCompletionGate(response.data);
+                    await refreshGuidanceRequest().catch(() => undefined);
                     if (onStatusChange) {
                       onStatusChange();
                     }
@@ -420,8 +862,10 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
                   const newUrl = prompt("Ubah link Google Docs bimbingan/revisi Anda:", docsLink || "");
                   if (newUrl !== null && newUrl.trim() !== "") {
                     const trimmed = newUrl.trim();
-                    const prevStageId = stageId === "revisi-proposal" ? "bimbingan-pra-proposal" : "bimbingan-pra-sidang";
-                    await guidanceApi.updateDocsLink(prevStageId, trimmed);
+                    await guidanceApi.submitRequest(stageId, {
+                      googleDocsLink: trimmed,
+                      studentNote: "Pengajuan bimbingan revisi dengan link Google Docs terbaru.",
+                    });
                     setDocsLink(trimmed);
                     await refreshData();
                   }
@@ -432,6 +876,61 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
               </button>
             )}
           </div>
+        </div>
+      </div>
+
+      <div
+        className={cn(
+          "bg-card border rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4",
+          isGuidanceRequestApproved
+            ? "border-emerald-500/20 bg-emerald-500/[0.02]"
+            : isGuidanceRequestWaiting
+            ? "border-amber-500/25 bg-amber-500/[0.02]"
+            : "border-border/80"
+        )}
+      >
+        <div className="space-y-1 min-w-0">
+          <h5 className="text-sm font-semibold text-foreground">Status Bimbingan Revisi</h5>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {isGuidanceRequestApproved
+              ? "Request bimbingan revisi sudah disetujui. Penyelesaian butir revisi akan dikirim sebagai material bimbingan revisi."
+              : isGuidanceRequestWaiting
+              ? "Request bimbingan revisi sudah dikirim dan menunggu validasi dosen."
+              : "Ajukan request bimbingan revisi sebelum mengirim penyelesaian butir revisi."}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span
+            className={cn(
+              "text-[10px] font-semibold px-2.5 py-0.5 rounded-full border shadow-2xs select-none",
+              isGuidanceRequestApproved &&
+                "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400",
+              isGuidanceRequestWaiting &&
+                "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400",
+              !guidanceRequest &&
+                "bg-slate-500/10 border-slate-500/20 text-slate-550 dark:text-slate-400"
+            )}
+          >
+            {guidanceRequestLabel}
+          </span>
+          {role === "mahasiswa" && !isGuidanceRequestWaiting && !isGuidanceRequestApproved && (
+            <button
+              type="button"
+              onClick={handleSubmitGuidanceRequest}
+              className="px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-xl shadow-xs transition hover:opacity-90 inline-flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              Ajukan Bimbingan Revisi
+            </button>
+          )}
+          {role === "dosen" && !isCoordinatorWorkflow && isGuidanceRequestWaiting && (
+            <button
+              type="button"
+              onClick={handleApproveGuidanceRequest}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-xs transition hover:opacity-90 inline-flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              Setujui Request Revisi
+            </button>
+          )}
         </div>
       </div>
 
@@ -449,9 +948,14 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
 
         <div className="flex flex-col gap-4">
           {data.items.map((item) => {
-            const isDone = item.status === "done";
-            const isInProgress = item.status === "in progress";
-            const isPending = item.status === "pending";
+            const revisionMaterialAttempts = getRevisionMaterialsForItem(item);
+            const revisionMaterial = getRevisionMaterialForItem(item);
+            const attemptSummary = revisionMaterial?.attemptSummary;
+            const effectiveStatus = getEffectiveItemStatus(item);
+            const isDone = effectiveStatus === "done";
+            const isInProgress = effectiveStatus === "in progress";
+            const isPending = effectiveStatus === "pending";
+            const isRejected = revisionMaterial?.status === "Ditolak";
 
             return (
               <div
@@ -486,10 +990,11 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
                       "text-[10px] font-semibold px-2.5 py-0.5 rounded-full border self-start sm:self-center capitalize select-none shrink-0 shadow-2xs",
                       isDone && "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 dark:bg-emerald-950/20",
                       isInProgress && "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400 dark:bg-amber-950/20",
-                      isPending && "bg-slate-500/10 border-slate-500/20 text-slate-550 dark:text-slate-400 dark:bg-slate-900/40"
+                      isPending && !isRejected && "bg-slate-500/10 border-slate-500/20 text-slate-550 dark:text-slate-400 dark:bg-slate-900/40",
+                      isRejected && "bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400 dark:bg-red-950/20"
                     )}
                   >
-                    {isDone ? "Selesai" : isInProgress ? "Menunggu Validasi" : "Belum Selesai"}
+                    {isDone ? "Selesai" : isInProgress ? "Menunggu Validasi" : isRejected ? "Ditolak" : "Belum Selesai"}
                   </span>
                 </div>
 
@@ -502,6 +1007,102 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
                   <p className="text-[10px] text-muted-foreground font-medium">
                     DIBERIKAN OLEH: <span className="text-foreground font-semibold">{item.assignedTo}</span>
                   </p>
+                  {revisionMaterial && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px]">
+                      <span className="text-muted-foreground font-semibold">Material bimbingan terakhir:</span>
+                      <span
+                        className={cn(
+                          "font-semibold px-2 py-0.5 rounded-full border",
+                          revisionMaterial.status === "Valid" &&
+                            "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400",
+                          revisionMaterial.status === "Diajukan" &&
+                            "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400",
+                          revisionMaterial.status === "Ditolak" &&
+                            "bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400"
+                        )}
+                      >
+                        {revisionMaterial.status}
+                      </span>
+                      <span className="text-muted-foreground">
+                        Percobaan {attemptSummary?.latestAttemptNumber || revisionMaterial.attemptNumber}
+                        {(attemptSummary?.totalAttempts || revisionMaterialAttempts.length) > 1
+                          ? ` dari ${attemptSummary?.totalAttempts || revisionMaterialAttempts.length}`
+                          : ""}
+                      </span>
+                      {revisionMaterial.validatedAt && (
+                        <span className="text-muted-foreground">
+                          Divalidasi {formatDateTime(revisionMaterial.validatedAt)}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {attemptSummary?.hasRejectedAttempt && attemptSummary.latestRejectedNote && (
+                    <p className="text-[10px] text-red-600 dark:text-red-400 font-medium leading-relaxed">
+                      Catatan penolakan terakhir: {attemptSummary.latestRejectedNote}
+                    </p>
+                  )}
+                  {revisionMaterialAttempts.length > 1 && (
+                    <div className="mt-2 rounded-lg border border-border/60 bg-slate-50/50 dark:bg-slate-900/30 p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[9px] text-muted-foreground uppercase font-bold">
+                          Riwayat Attempt Material
+                        </span>
+                        <span className="text-[9px] text-muted-foreground font-semibold">
+                          {revisionMaterialAttempts.length} percobaan
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {revisionMaterialAttempts.map((attempt) => (
+                          <div
+                            key={attempt.id}
+                            className="rounded-md border border-border/50 bg-card/70 px-3 py-2 text-[10px] leading-relaxed"
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-bold text-foreground">
+                                Percobaan {attempt.attemptNumber}
+                              </span>
+                              <span
+                                className={cn(
+                                  "font-semibold px-2 py-0.5 rounded-full border",
+                                  attempt.status === "Valid" &&
+                                    "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400",
+                                  attempt.status === "Diajukan" &&
+                                    "bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400",
+                                  attempt.status === "Ditolak" &&
+                                    "bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400"
+                                )}
+                              >
+                                {attempt.status}
+                              </span>
+                              {attempt.attemptSummary?.isLatestAttempt && (
+                                <span className="text-muted-foreground font-semibold">
+                                  Attempt terbaru
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-muted-foreground">
+                              Diajukan {formatDateTime(attempt.submittedAt || attempt.createdAt)}
+                              {attempt.validatedAt
+                                ? ` - Divalidasi ${formatDateTime(attempt.validatedAt)}`
+                                : ""}
+                            </div>
+                            {attempt.lecturerNote && (
+                              <div
+                                className={cn(
+                                  "mt-1 font-medium",
+                                  attempt.status === "Ditolak"
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-muted-foreground"
+                                )}
+                              >
+                                Catatan dosen: {attempt.lecturerNote}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Tanggapan/Penyelesaian Section */}
@@ -530,21 +1131,32 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
                   {role === "mahasiswa" && isPending && (
                     <button
                       type="button"
-                      onClick={() => handleAjukanPenyelesaianDirect(item.id)}
+                      onClick={() => handleAjukanPenyelesaianDirect(item)}
                       className="px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-xl shadow-xs transition hover:opacity-90 inline-flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      Ajukan Penyelesaian
+                      {isRejected ? "Ajukan Ulang Penyelesaian" : "Ajukan Penyelesaian"}
                     </button>
                   )}
 
-                  {role === "dosen" && isInProgress && (
-                    <button
-                      type="button"
-                      onClick={() => handleApproveItem(item.id)}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-xs transition hover:opacity-90 inline-flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Check className="w-4 h-4 stroke-[3]" /> Setujui Penyelesaian
-                    </button>
+                  {role === "dosen" && !isCoordinatorWorkflow && isInProgress && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleApproveItem(item)}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-xs transition hover:opacity-90 inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Check className="w-4 h-4 stroke-[3]" /> Setujui Penyelesaian
+                      </button>
+                      {revisionMaterial?.status === "Diajukan" && (
+                        <button
+                          type="button"
+                          onClick={() => handleRejectItem(item)}
+                          className="px-4 py-2 border border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-50/40 dark:hover:bg-red-950/20 text-xs font-semibold rounded-xl transition inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          Tolak
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -552,6 +1164,16 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
           })}
         </div>
       </div>
+
+      {role !== "mahasiswa" && (
+        <div className="bg-card border border-border/80 rounded-2xl p-5 shadow-xs">
+          <h5 className="text-sm font-semibold text-foreground mb-1">Gate Penyelesaian Revisi</h5>
+          <p className="text-xs text-muted-foreground/95 mb-4">
+            Ringkasan kesiapan mahasiswa untuk unggah dokumen final dan menyelesaikan tahap revisi.
+          </p>
+          {completionGatePanel}
+        </div>
+      )}
 
       {/* ================= SECTION E: UPLOAD FINAL REVISI ================= */}
       {role === "mahasiswa" && (
@@ -561,16 +1183,18 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
           Unggah naskah proposal Tugas Akhir yang sudah di-acc secara utuh oleh seluruh penguji & ketua sidang.
         </p>
 
+        <div className="mb-4">{completionGatePanel}</div>
+
         {isEligibleForUpload ? (
           <div className="space-y-4">
-            {uploadFileMock ? (
+            {finalFileName ? (
               <div className="flex items-center justify-between p-4 border border-emerald-500/25 bg-emerald-50/5 dark:bg-emerald-950/10 rounded-xl">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center justify-center shrink-0">
                     <FileText className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <h6 className="text-xs font-semibold text-foreground truncate">{uploadFileMock}</h6>
+                    <h6 className="text-xs font-semibold text-foreground truncate">{finalFileName}</h6>
                     <p className="text-[10px] text-muted-foreground mt-0.5">Naskah Hasil Revisi Selesai • PDF Document</p>
                   </div>
                 </div>
@@ -580,14 +1204,11 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
                     <input type="file" accept=".pdf,.doc,.docx" onChange={handleUploadFile} className="hidden" />
                   </label>
                   <button
-                    onClick={async () => {
-                      alert("Berkas revisi proposal sukses diunggah dan diverifikasi! Anda kini dapat melanjutkan bimbingan pra sidang.");
-                      await progressApi.updateStepStatus(stageId, "completed");
-                      if (onStatusChange) onStatusChange();
-                    }}
-                    className="px-4 py-2 bg-emerald-650 hover:bg-emerald-750 text-white font-semibold text-xs rounded-xl shadow-xs transition hover:opacity-90 inline-flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                    onClick={handleCompleteRevisionStage}
+                    disabled={isCompletingRevision || !completionGate.readyForProgressCompletion}
+                    className="px-4 py-2 bg-emerald-650 hover:bg-emerald-750 text-white font-semibold text-xs rounded-xl shadow-xs transition hover:opacity-90 inline-flex items-center justify-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    Selesaikan Tahap Revisi
+                    {isCompletingRevision ? "Menyelesaikan..." : "Selesaikan Tahap Revisi"}
                   </button>
                 </div>
               </div>
@@ -611,7 +1232,9 @@ export const RevisiWorkflow: React.FC<RevisiWorkflowProps> = ({
             <Lock className="w-5 h-5 text-slate-450 mb-2" />
             <h6 className="text-xs font-bold text-slate-500">Panel Unggahan Terkunci</h6>
             <p className="text-[11px] text-muted-foreground max-w-sm mt-1 leading-relaxed">
-              Tombol unggahan berkas final revisi akan otomatis terbuka jika semua butir diskusi revisi sudah status <strong>Done</strong> dan kelayakan dewan penguji disetujui (Approved).
+              {completionGateBlockingReasons.length > 0
+                ? completionGateBlockingReasons.join(" ")
+                : "Tombol unggahan berkas final revisi akan otomatis terbuka jika seluruh syarat revisi sudah terpenuhi."}
             </p>
           </div>
         )}

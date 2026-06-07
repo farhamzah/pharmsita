@@ -6,13 +6,24 @@ import type {
   GuidanceWorkflow,
   FinalProjectRegistration,
   FinalProjectRegistrationStatus,
+  GuidanceMaterial,
+  GuidanceMaterialStatus,
+  GuidanceRequest,
+  GuidanceRequestStatus,
+  LecturerDirectoryItem,
   SupervisorAssignment,
+  GuidanceType,
+  AuditExportAttempt,
+  AuditExportAttemptFilter,
+  AuditExportScope,
   AuditLog,
+  AuditLogFilter,
   RequirementDefinition,
   RequirementBundle,
   RefreshTokenRecord,
   RevisionStage,
   RevisionWorkflow,
+  StudentDirectoryItem,
   StepId,
   StepStatus,
   StudentStep,
@@ -26,14 +37,111 @@ import type {
 
 export type Awaitable<T> = T | Promise<T>;
 
+export interface AuditExportAttemptInput {
+  id: string;
+  actorId: string | null;
+  actorRole: UserRole | null;
+  scope: AuditExportScope;
+  attemptedAt: string;
+  windowStartedAt: string;
+  maxAttempts: number;
+  windowSeconds: number;
+}
+
+export interface AuditExportAttemptResult {
+  attempt: AuditExportAttempt;
+  allowed: boolean;
+  retryAfterSeconds: number;
+}
+
+export interface AuditExportAttemptCleanupInput {
+  allowedBefore: string;
+  blockedBefore: string;
+  limit: number;
+  dryRun?: boolean;
+}
+
+export interface AuditExportAttemptCleanupResult {
+  deletedAllowed: number;
+  deletedBlocked: number;
+}
+
 export interface UserRepository {
   list(): Awaitable<UserAccount[]>;
-  replaceAll(users: UserAccount[]): Awaitable<UserAccount[]>;
-  findById(id: string): Awaitable<UserAccount | null>;
+  listLecturerDirectory(): Awaitable<LecturerDirectoryItem[]>;
+  updateLecturerQuota(
+    lecturerId: string,
+    input: { quotaLimit: number; actorId: string; timestamp: string }
+  ): Awaitable<LecturerDirectoryItem | null>;
+    listStudentDirectory(options?: {
+      lecturerId?: string | null;
+    }): Awaitable<StudentDirectoryItem[]>;
+    replaceAll(users: UserAccount[]): Awaitable<UserAccount[]>;
+    createUser(
+      input: Omit<UserAccount, "id"> & {
+        id?: string;
+        password?: string;
+        actorId: string;
+        timestamp: string;
+      }
+    ): Awaitable<UserAccount>;
+    updateUser(
+      userId: string,
+      input: Partial<Omit<UserAccount, "id">> & {
+        password?: string;
+        actorId: string;
+        timestamp: string;
+      }
+    ): Awaitable<UserAccount | null>;
+    updateStatus(
+      userId: string,
+      input: {
+        status: UserAccount["status"];
+        actorId: string;
+        timestamp: string;
+      }
+    ): Awaitable<UserAccount | null>;
+    resetPassword(
+      userId: string,
+      input: {
+        password: string;
+        actorId: string;
+        timestamp: string;
+      }
+    ): Awaitable<UserAccount | null>;
+    findById(id: string): Awaitable<UserAccount | null>;
   findByIdentifier(identifier: string): Awaitable<UserAccount | null>;
   findAuthRecordById(id: string): Awaitable<UserRecord | null>;
   findAuthRecordByIdentifier(identifier: string): Awaitable<UserRecord | null>;
   touchLastLogin(userId: string, timestamp: string): Awaitable<UserAccount | null>;
+  updateProfile(
+    userId: string,
+    input: {
+      name?: string;
+      email?: string;
+      phone?: string;
+      address?: string;
+      gender?: UserAccount["gender"];
+      birthDate?: string;
+      nim?: string;
+      programStudi?: string;
+      angkatan?: string;
+      kelas?: string;
+      skemaTA?: UserAccount["skemaTA"];
+      jenisTA?: string;
+      nidn?: string;
+      bidangKeahlian?: string[];
+      jabatanAkademik?: string;
+      peranSistem?: string[];
+      jabatan?: string;
+      hakAksesUtama?: string[];
+      divisi?: string;
+      tingkatAkses?: UserAccount["tingkatAkses"];
+      cakupanAkses?: string[];
+      actorId: string;
+      timestamp: string;
+    }
+  ): Awaitable<UserAccount | null>;
   getRoles(userId: string): Awaitable<UserRole[]>;
   completeFirstLogin(
     userId: string,
@@ -51,8 +159,17 @@ export interface RefreshTokenRepository {
 }
 
 export interface AuditLogRepository {
-  list(limit?: number): Awaitable<AuditLog[]>;
+  list(filter?: AuditLogFilter | number): Awaitable<AuditLog[]>;
+  count(filter?: AuditLogFilter | number): Awaitable<number>;
   create(record: AuditLog): Awaitable<AuditLog>;
+  recordExportAttempt(
+    input: AuditExportAttemptInput
+  ): Awaitable<AuditExportAttemptResult>;
+  listExportAttempts(filter?: AuditExportAttemptFilter): Awaitable<AuditExportAttempt[]>;
+  countExportAttempts(filter?: AuditExportAttemptFilter): Awaitable<number>;
+  cleanupExportAttempts(
+    input: AuditExportAttemptCleanupInput
+  ): Awaitable<AuditExportAttemptCleanupResult>;
 }
 
 export interface MasterDataRepository {
@@ -139,6 +256,70 @@ export interface FinalProjectRegistrationRepository {
     registrationId: string,
     input: FinalProjectRegistrationValidationInput
   ): Awaitable<FinalProjectRegistration | null>;
+  replaceSupervisorAssignmentsByStudentId(
+    studentId: string,
+    assignments: SupervisorAssignment[],
+    input: {
+      actorId: string;
+      timestamp: string;
+      coordinatorNote?: string;
+    }
+  ): Awaitable<FinalProjectRegistration | null>;
+}
+
+export interface GuidanceRequestSaveInput {
+  guidanceType: GuidanceType;
+  googleDocsLink: string;
+  studentNote?: string;
+  actorId: string;
+  timestamp: string;
+}
+
+export interface GuidanceRequestValidationInput {
+  status: Extract<GuidanceRequestStatus, "Disetujui" | "Ditolak">;
+  lecturerNote?: string;
+  actorId: string;
+  timestamp: string;
+}
+
+export interface GuidanceMaterialSubmissionInput {
+  materialType: GuidanceMaterial["materialType"];
+  sourceRevisionItemId?: string | null;
+  topic: string;
+  content?: string;
+  actorId: string;
+  timestamp: string;
+}
+
+export interface GuidanceMaterialValidationInput {
+  status: Extract<GuidanceMaterialStatus, "Valid" | "Ditolak">;
+  lecturerNote?: string;
+  actorId: string;
+  timestamp: string;
+}
+
+export interface GuidanceRequestRepository {
+  listForStudent(studentId: string): Awaitable<GuidanceRequest[]>;
+  findById(id: string): Awaitable<GuidanceRequest | null>;
+  getForStudent(studentId: string, id: string): Awaitable<GuidanceRequest | null>;
+  createForStudent(
+    studentId: string,
+    input: GuidanceRequestSaveInput
+  ): Awaitable<GuidanceRequest>;
+  listForLecturer(lecturerId: string): Awaitable<GuidanceRequest[]>;
+  validateRequest(
+    id: string,
+    input: GuidanceRequestValidationInput
+  ): Awaitable<GuidanceRequest | null>;
+  listMaterials(id: string): Awaitable<GuidanceMaterial[]>;
+  submitMaterial(
+    id: string,
+    input: GuidanceMaterialSubmissionInput
+  ): Awaitable<GuidanceMaterial | null>;
+  validateMaterial(
+    materialId: string,
+    input: GuidanceMaterialValidationInput
+  ): Awaitable<GuidanceMaterial | null>;
 }
 
 export interface RepositoryRegistry {
@@ -148,4 +329,5 @@ export interface RepositoryRegistry {
   auditLogRepository: AuditLogRepository;
   studentWorkflowRepository: StudentWorkflowRepository;
   finalProjectRegistrationRepository: FinalProjectRegistrationRepository;
+  guidanceRequestRepository: GuidanceRequestRepository;
 }

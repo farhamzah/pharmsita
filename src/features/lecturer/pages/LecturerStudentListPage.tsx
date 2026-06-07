@@ -10,6 +10,10 @@ import { PendaftaranTACombined } from '../../student/components/dashboard/Pendaf
 import { BimbinganWorkflow } from '../../student/components/dashboard/BimbinganWorkflow';
 import { SidangWorkflow } from '../../student/components/dashboard/SidangWorkflow';
 import { RevisiWorkflow } from '../../student/components/dashboard/RevisiWorkflow';
+import {
+  lecturerWorkflowApi,
+  type StudentDirectoryItem,
+} from '../../../core/api/domain';
 
 import { 
   ArrowLeft, 
@@ -27,6 +31,10 @@ interface StudentSupervisorData {
   stage: string;
   p1Id: string;
   p2Id: string;
+  activeStepId?: StepId | "selesai" | null;
+  activeStepStatus?: StepStatus | null;
+  isCompleted?: boolean;
+  supervisorRole?: "pembimbing-1" | "pembimbing-2" | null;
 }
 
 const INITIAL_STUDENT_LIST: StudentSupervisorData[] = [
@@ -126,6 +134,14 @@ const STEP_DESCRIPTIONS: Record<string, string> = {
 };
 
 const mapStudentToStepId = (student: any): string => {
+  if (student.activeStepId) {
+    return student.activeStepId;
+  }
+
+  if (student.isCompleted || student.stage === "Selesai") {
+    return "selesai";
+  }
+
   switch (student.id) {
     case "1": return "sidang-proposal";
     case "2": return "bimbingan-pra-sidang";
@@ -145,6 +161,20 @@ const mapStudentToStepId = (student: any): string => {
       return "pendaftaran-ta";
   }
 };
+
+const mapDirectoryStudent = (student: StudentDirectoryItem): StudentSupervisorData => ({
+  id: student.id,
+  name: student.name,
+  nim: student.nim || student.identifier,
+  title: student.thesisTitle || "Tugas Akhir belum diajukan",
+  stage: student.activeStepLabel,
+  p1Id: student.supervisor1Id || "",
+  p2Id: student.supervisor2Id || "",
+  activeStepId: student.isCompleted ? "selesai" : student.activeStepId || "pendaftaran-ta",
+  activeStepStatus: student.activeStepStatus || null,
+  isCompleted: student.isCompleted,
+  supervisorRole: student.supervisorRole || null,
+});
 
 const getStepsForStudent = (student: any): StudentStep[] => {
   const currentStepId = mapStudentToStepId(student);
@@ -184,11 +214,39 @@ const getStepsForStudent = (student: any): StudentStep[] => {
 };
 
 export const LecturerStudentListPage: React.FC = () => {
-  const [studentsList] = useState<StudentSupervisorData[]>(INITIAL_STUDENT_LIST);
+  const [studentsList, setStudentsList] = useState<StudentSupervisorData[]>(INITIAL_STUDENT_LIST);
   const [activeFilter, setActiveFilter] = useState<'pembimbing-1' | 'pembimbing-2' | 'terselesaikan'>('pembimbing-1');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [activeStepId, setActiveStepId] = useState<string>('pendaftaran-ta');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [apiSteps, setApiSteps] = useState<StudentStep[] | null>(null);
+  const [isLoadingStudents, setIsLoadingStudents] = useState<boolean>(true);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    lecturerWorkflowApi
+      .listStudents()
+      .then((response) => {
+        if (!mounted) return;
+        setStudentsList(response.data.map(mapDirectoryStudent));
+        setDirectoryError(null);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setDirectoryError("Directory backend belum tersedia, memakai data demo lokal.");
+      })
+      .finally(() => {
+        if (mounted) {
+          setIsLoadingStudents(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     const targetStudentId = sessionStorage.getItem('target_student_id');
@@ -201,14 +259,53 @@ export const LecturerStudentListPage: React.FC = () => {
     }
   }, []);
 
+  React.useEffect(() => {
+    if (!selectedStudentId) {
+      setApiSteps(null);
+      return;
+    }
+
+    let mounted = true;
+    lecturerWorkflowApi
+      .getProgress(selectedStudentId)
+      .then((response) => {
+        if (mounted) {
+          setApiSteps(response.data);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setApiSteps(null);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedStudentId]);
+
   const getActiveStudents = () => {
+    const hasBackendSupervisorRoles = studentsList.some((student) => !!student.supervisorRole);
+
     switch (activeFilter) {
       case 'pembimbing-1':
-        return studentsList.filter(s => s.p1Id === '1' && s.stage !== 'Selesai');
+        return studentsList.filter((student) =>
+          hasBackendSupervisorRoles
+            ? student.supervisorRole === "pembimbing-1" && !student.isCompleted
+            : !student.isCompleted && student.stage !== "Selesai"
+        );
       case 'pembimbing-2':
-        return studentsList.filter(s => s.p2Id === '1' && s.stage !== 'Selesai');
+        return studentsList.filter((student) =>
+          hasBackendSupervisorRoles
+            ? student.supervisorRole === "pembimbing-2" && !student.isCompleted
+            : student.p2Id === "1" && student.stage !== "Selesai"
+        );
       case 'terselesaikan':
-        return studentsList.filter(s => (s.p1Id === '1' || s.p2Id === '1') && s.stage === 'Selesai');
+        return studentsList.filter((student) =>
+          hasBackendSupervisorRoles
+            ? !!student.supervisorRole && !!student.isCompleted
+            : !!student.isCompleted || student.stage === "Selesai"
+        );
       default:
         return [];
     }
@@ -226,8 +323,24 @@ export const LecturerStudentListPage: React.FC = () => {
   });
 
   const selectedStudent = studentsList.find(s => s.id === selectedStudentId);
-  const activeSteps = selectedStudent ? getStepsForStudent(selectedStudent) : [];
+  const activeSteps = selectedStudent ? apiSteps || getStepsForStudent(selectedStudent) : [];
   const currentStep = activeSteps.find(s => s.id === activeStepId);
+  const hasBackendSupervisorRoles = studentsList.some((student) => !!student.supervisorRole);
+  const pembimbing1Count = studentsList.filter((student) =>
+    hasBackendSupervisorRoles
+      ? student.supervisorRole === "pembimbing-1" && !student.isCompleted
+      : !student.isCompleted && student.stage !== "Selesai"
+  ).length;
+  const pembimbing2Count = studentsList.filter((student) =>
+    hasBackendSupervisorRoles
+      ? student.supervisorRole === "pembimbing-2" && !student.isCompleted
+      : student.p2Id === "1" && student.stage !== "Selesai"
+  ).length;
+  const completedCount = studentsList.filter((student) =>
+    hasBackendSupervisorRoles
+      ? !!student.supervisorRole && !!student.isCompleted
+      : !!student.isCompleted || student.stage === "Selesai"
+  ).length;
 
   const studentColumns = [
     { key: 'student', label: 'Nama', sortable: true, render: (row: StudentSupervisorData) => (
@@ -421,7 +534,7 @@ export const LecturerStudentListPage: React.FC = () => {
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
-              Sebagai Pembimbing 1 ({studentsList.filter(s => s.p1Id === '1' && s.stage !== 'Selesai').length})
+              Sebagai Pembimbing 1 ({pembimbing1Count})
             </button>
             <button
               onClick={() => {
@@ -434,7 +547,7 @@ export const LecturerStudentListPage: React.FC = () => {
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
-              Sebagai Pembimbing 2 ({studentsList.filter(s => s.p2Id === '1' && s.stage !== 'Selesai').length})
+              Sebagai Pembimbing 2 ({pembimbing2Count})
             </button>
             <button
               onClick={() => {
@@ -447,7 +560,7 @@ export const LecturerStudentListPage: React.FC = () => {
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
-              Terselesaikan ({studentsList.filter(s => (s.p1Id === '1' || s.p2Id === '1') && s.stage === 'Selesai').length})
+              Terselesaikan ({completedCount})
             </button>
           </div>
 
@@ -482,6 +595,12 @@ export const LecturerStudentListPage: React.FC = () => {
                 </button>
               )}
             </div>
+
+            {(isLoadingStudents || directoryError) && (
+              <div className="mb-4 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs font-semibold text-muted-foreground">
+                {isLoadingStudents ? "Memuat directory mahasiswa..." : directoryError}
+              </div>
+            )}
 
             {filteredStudents.length === 0 ? (
               <div className="py-12 border border-dashed border-border rounded-xl flex flex-col items-center justify-center text-center">

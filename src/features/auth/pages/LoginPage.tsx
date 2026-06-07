@@ -40,6 +40,21 @@ const roleMeta = (role: ApiRole): { label: string; Icon: LucideIcon } => {
   }
 };
 
+const profileRouteForRole = (role: ApiRole) => {
+  switch (normalizeApiRole(role)) {
+    case "mahasiswa":
+      return "mahasiswa/detail-profil";
+    case "dosen":
+      return "dosen/profil";
+    case "kordinator":
+      return "kordinator/profil";
+    case "admin":
+      return "admin/profil";
+    default:
+      return normalizeApiRole(role);
+  }
+};
+
 const LoginComponent: React.FC = () => {
   const auth = React.useMemo(() => new AuthService(), []);
   const [step, setStep] = React.useState<LoginStep>("credentials");
@@ -66,11 +81,14 @@ const LoginComponent: React.FC = () => {
     showMessage("");
   };
 
-  const completeSession = (session: AuthSessionResponse) => {
+  const completeSession = (session: AuthSessionResponse, redirectToProfile = false) => {
     const role = normalizeApiRole(session.user.role);
     auth.setToken(session.accessToken, session.user.name, role);
     showMessage("Login berhasil, mengalihkan...", "text-green-600");
-    setTimeout(() => navigateTo(role), 300);
+    setTimeout(
+      () => navigateTo(redirectToProfile ? profileRouteForRole(session.user.role) : role),
+      300
+    );
   };
 
   const activateChallenge = (response: AuthChallengeResponse) => {
@@ -164,7 +182,7 @@ const LoginComponent: React.FC = () => {
         role: selectedRole,
         newPassword,
       });
-      completeSession(session);
+      completeSession(session, true);
     } catch {
       showMessage("Aktivasi gagal. Silakan cek password atau login ulang.", "text-red-500");
     } finally {

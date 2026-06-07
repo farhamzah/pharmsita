@@ -1,4 +1,7 @@
-import type { RevisiData } from "../../../features/student/types/revisi";
+import type {
+  RevisiData,
+  RevisionCompletionGateStatus,
+} from "../../../features/student/types/revisi";
 import { revisiService } from "../../../features/student/services/revisi-service";
 import { apiClient, mockApiAdapter } from "../api-client";
 
@@ -28,8 +31,96 @@ export interface UploadRevisionFinalFileRequest {
   fileName: string;
 }
 
+export const buildMockRevisionCompletionGateStatus = (
+  workflow: RevisiData
+): RevisionCompletionGateStatus => {
+  const doneCount = workflow.items.filter((item) => item.status === "done").length;
+  const blockingReasonByCode: Record<RevisionCompletionGateStatus["checks"][number]["code"], string> = {
+    REVISION_ITEMS_AVAILABLE: "Belum ada butir revisi yang bisa divalidasi.",
+    REVISION_ITEMS_DONE: "Semua butir revisi harus berstatus selesai.",
+    PENGUJI_1_APPROVED: "Approval Penguji 1 belum disetujui.",
+    PENGUJI_2_APPROVED: "Approval Penguji 2 belum disetujui.",
+    CHAIR_APPROVED: "Approval Ketua Sidang belum disetujui.",
+    FINAL_FILE_UPLOADED: "Dokumen final hasil revisi belum diunggah.",
+  };
+  const checks: RevisionCompletionGateStatus["checks"] = [
+    {
+      code: "REVISION_ITEMS_AVAILABLE",
+      label: "Butir revisi tersedia",
+      passed: workflow.items.length > 0,
+      detail:
+        workflow.items.length > 0
+          ? `${workflow.items.length} butir revisi tersedia`
+          : "Belum ada butir revisi yang bisa divalidasi.",
+      requiredFor: ["final-upload", "progress-completion"],
+    },
+    {
+      code: "REVISION_ITEMS_DONE",
+      label: "Semua butir revisi selesai",
+      passed: workflow.items.length > 0 && workflow.items.every((item) => item.status === "done"),
+      detail: `${doneCount}/${workflow.items.length} butir selesai`,
+      requiredFor: ["final-upload", "progress-completion"],
+    },
+    {
+      code: "PENGUJI_1_APPROVED",
+      label: "Approval Penguji 1",
+      passed: workflow.penguji1Approved,
+      detail: workflow.penguji1Approved ? "Disetujui" : "Belum disetujui",
+      requiredFor: ["final-upload", "progress-completion"],
+    },
+    {
+      code: "PENGUJI_2_APPROVED",
+      label: "Approval Penguji 2",
+      passed: workflow.penguji2Approved,
+      detail: workflow.penguji2Approved ? "Disetujui" : "Belum disetujui",
+      requiredFor: ["final-upload", "progress-completion"],
+    },
+    {
+      code: "CHAIR_APPROVED",
+      label: "Approval Ketua Sidang",
+      passed: workflow.ketuaSidangStatus === "approved",
+      detail:
+        workflow.ketuaSidangStatus === "approved"
+          ? "Disetujui"
+          : workflow.ketuaSidangStatus === "rejected"
+            ? "Ditolak"
+            : "Menunggu",
+      requiredFor: ["final-upload", "progress-completion"],
+    },
+    {
+      code: "FINAL_FILE_UPLOADED",
+      label: "Dokumen final hasil revisi",
+      passed: Boolean(workflow.finalFile),
+      detail: workflow.finalFile || "Belum diunggah",
+      requiredFor: ["progress-completion"],
+    },
+  ];
+  const finalUploadBlockingReasons = checks
+    .filter((check) => check.requiredFor.includes("final-upload") && !check.passed)
+    .map((check) => blockingReasonByCode[check.code]);
+  const progressCompletionBlockingReasons = checks
+    .filter((check) => check.requiredFor.includes("progress-completion") && !check.passed)
+    .map((check) => blockingReasonByCode[check.code]);
+
+  return {
+    stageId: workflow.stageId,
+    readyForFinalUpload: finalUploadBlockingReasons.length === 0,
+    readyForProgressCompletion: progressCompletionBlockingReasons.length === 0,
+    finalFile: workflow.finalFile,
+    finalUploadBlockingReasons,
+    progressCompletionBlockingReasons,
+    blockingReasons: progressCompletionBlockingReasons,
+    checks,
+    evaluatedAt: new Date().toISOString(),
+  };
+};
+
 mockApiAdapter.register("GET", "/students/me/revisions/:stageId", ({ params }) => ({
   data: revisiService.getData(params.stageId as RevisionStage),
+}));
+
+mockApiAdapter.register("GET", "/students/me/revisions/:stageId/completion-gate", ({ params }) => ({
+  data: buildMockRevisionCompletionGateStatus(revisiService.getData(params.stageId as RevisionStage)),
 }));
 
 mockApiAdapter.register<UpdateRevisionItemStatusRequest>(
@@ -105,6 +196,11 @@ export const revisionApi = {
   },
   get(stageId: RevisionStage) {
     return apiClient.get<{ data: RevisiData }>(`/students/me/revisions/${stageId}`);
+  },
+  getCompletionGate(stageId: RevisionStage) {
+    return apiClient.get<{ data: RevisionCompletionGateStatus }>(
+      `/students/me/revisions/${stageId}/completion-gate`
+    );
   },
   updateItemStatus(stageId: RevisionStage, itemId: number, status: UpdateRevisionItemStatusRequest["status"]) {
     return apiClient.patch<{ data: RevisiData }, UpdateRevisionItemStatusRequest>(

@@ -5,6 +5,10 @@ import { studentWorkflowRepository } from "../../repositories";
 import { validateProgressUpdate } from "../../validation/request-validators";
 import { auditService } from "../audit/audit-service";
 import { authService } from "../auth/auth-service";
+import {
+  assertRevisionStepCanBeCompleted,
+  isRevisionStepId,
+} from "./revision-completion-gate";
 
 export const registerProgressRoutes = (router: Router) => {
   router.get("/students/me/progress", async ({ headers }) => {
@@ -16,6 +20,9 @@ export const registerProgressRoutes = (router: Router) => {
     const actor = await authService.requirePermission(headers, "student.workflow.submit");
     const { status } = validateProgressUpdate(body);
     const stepId = params.stepId as StepId;
+    if (status === "completed" && isRevisionStepId(stepId)) {
+      await assertRevisionStepCanBeCompleted(actor.id, stepId, actor);
+    }
     const before = await studentWorkflowRepository.getProgressSteps(actor.id);
     const after = await studentWorkflowRepository.updateProgressStep(
       actor.id,

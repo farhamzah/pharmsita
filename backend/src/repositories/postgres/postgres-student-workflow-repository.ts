@@ -5,8 +5,16 @@ import type {
 } from "../../database/postgres/connection";
 import { createDefaultStudentWorkflowState } from "../../database/default-student-workflow-state";
 import type {
+  ExamStage,
+  ExamWorkflow,
+  GuidanceStage,
+  GuidanceSession,
+  GuidanceWorkflow,
   RequirementBundle,
   RequirementItem,
+  RevisionItem,
+  RevisionStage,
+  RevisionWorkflow,
   StepId,
   StepStatus,
   StudentStep,
@@ -49,6 +57,109 @@ interface ThesisSubmissionRow {
   status: ThesisSubmission["status"];
   catatan_koordinator: string | null;
   bukti_file_ref: string | null;
+}
+
+interface GuidanceWorkflowRow {
+  id: string;
+  stage_id: GuidanceStage;
+  google_docs_link: string;
+  final_file_ref: string | null;
+  pembimbing1_approved: boolean;
+  pembimbing2_approved: boolean;
+  guidance_status: GuidanceWorkflow["guidanceStatus"];
+  guidance_requested_at: Date | string | null;
+  guidance_approved_at: Date | string | null;
+  guidance_start_date: Date | string | null;
+  guidance_start_time: Date | string | null;
+  guidance_note: string | null;
+  guidance_approval_note: string | null;
+}
+
+interface GuidanceSessionRow {
+  id: string;
+  session_number: number;
+  title: string;
+  status: GuidanceSession["status"];
+  session_status: GuidanceSession["sessionStatus"];
+  session_start_date: Date | string | null;
+  session_start_time: Date | string | null;
+  catatan_mahasiswa: string | null;
+  catatan_koordinator: string | null;
+}
+
+interface GuidanceChatRow {
+  id: string;
+  session_number: number;
+  sender_name_snapshot: string;
+  sender_role: GuidanceSession["chats"][number]["senderRole"];
+  message: string;
+  created_at: Date | string;
+}
+
+interface ExamRow {
+  id: string;
+  stage_id: ExamStage;
+  status: ExamWorkflow["status"];
+  google_docs_link: string;
+  submitted_at: Date | string | null;
+  grade: string | null;
+  result_status: ExamWorkflow["resultStatus"];
+  revision_notes: unknown;
+  schedule_date: Date | string | null;
+  schedule_start_time: Date | string | null;
+  schedule_end_time: Date | string | null;
+  schedule_room: string | null;
+  schedule_location: string | null;
+}
+
+interface ExamRequirementRow {
+  id: string;
+  requirement_key: string;
+  label: string;
+  fulfilled: boolean;
+  note: string | null;
+}
+
+interface ExamPanelistRow {
+  id: string;
+  panelist_key: string | null;
+  role: string;
+  role_label: string;
+  name_snapshot: string;
+  nidn_snapshot: string | null;
+  approved: boolean;
+}
+
+interface RevisionWorkflowRow {
+  id: string;
+  stage_id: RevisionStage;
+  final_file_ref: string | null;
+  penguji1_approved: boolean;
+  penguji2_approved: boolean;
+  ketua_sidang_status: RevisionWorkflow["ketuaSidangStatus"];
+  submitted_at: Date | string | null;
+}
+
+interface RevisionItemRow {
+  id: string;
+  item_number: number;
+  title: string;
+  topik: string;
+  materi: string;
+  assigned_to_name_snapshot: string | null;
+  status: RevisionItem["status"];
+  submitted_at: Date | string | null;
+  penyelesaian: string | null;
+  penyelesaian_link: string | null;
+}
+
+interface RevisionChatRow {
+  id: string;
+  item_number: number;
+  sender_name_snapshot: string;
+  sender_role: RevisionItem["chats"][number]["senderRole"];
+  message: string;
+  created_at: Date | string;
 }
 
 const initialStageKey = "initial";
@@ -139,8 +250,108 @@ const toThesisSubmission = (row: ThesisSubmissionRow): ThesisSubmission => ({
   buktiFile: row.bukti_file_ref || undefined,
 });
 
-const notImplemented = (area: string): never => {
-  throw new Error(`${area} PostgreSQL repository is not implemented yet.`);
+const toIsoOrNull = (value: Date | string | null | undefined) => {
+  if (!value) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
+const toDateOnlyOrNull = (value: Date | string | null | undefined) => {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  return value.slice(0, 10);
+};
+
+const toTimeOnlyOrNull = (value: Date | string | null | undefined) => {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString().slice(11, 16);
+  }
+
+  return value.slice(0, 5);
+};
+
+const toTimestampOrNow = (value: string | null | undefined) => {
+  if (!value) {
+    return new Date().toISOString();
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? new Date().toISOString() : new Date(parsed).toISOString();
+};
+
+const toStringArray = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === "string")
+        : [];
+    } catch {
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+
+  return [];
+};
+
+const normalizeTimeInput = (value: string | null | undefined) => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const matched = trimmed.match(/^(\d{1,2}):(\d{2})/);
+  if (!matched) {
+    return null;
+  }
+
+  return `${matched[1].padStart(2, "0")}:${matched[2]}`;
+};
+
+const parseScheduleTimeRange = (value: string | null | undefined) => {
+  const [startRaw, endRaw] = (value || "").split(/\s*-\s*/);
+
+  return {
+    startTime: normalizeTimeInput(startRaw),
+    endTime: normalizeTimeInput(endRaw),
+  };
+};
+
+const toScheduleTimeRange = (
+  startTime: Date | string | null | undefined,
+  endTime: Date | string | null | undefined
+) => {
+  const start = toTimeOnlyOrNull(startTime);
+  const end = toTimeOnlyOrNull(endTime);
+
+  if (start && end) {
+    return `${start} - ${end}`;
+  }
+
+  return start || end || "";
 };
 
 export class PostgresStudentWorkflowRepository implements StudentWorkflowRepository {
@@ -277,40 +488,115 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
     });
   }
 
-  getGuidance() {
-    return notImplemented("Student guidance");
+  async getGuidance(studentId: string, stageId: GuidanceStage) {
+    return this.ensureGuidanceWorkflow(studentId, stageId);
   }
 
-  updateGuidance() {
-    return notImplemented("Student guidance");
+  async updateGuidance(
+    studentId: string,
+    stageId: GuidanceStage,
+    mutator: (workflow: GuidanceWorkflow) => void
+  ) {
+    return this.withTransaction(async (client) => {
+      const workflow = await this.ensureGuidanceWorkflowWith(studentId, stageId, client);
+      mutator(workflow);
+      await this.replaceGuidanceWorkflowRecords(studentId, stageId, workflow, client);
+      const saved = await this.readGuidanceWorkflow(studentId, stageId, client);
+
+      if (!saved) {
+        throw new Error("Student guidance workflow was not saved.");
+      }
+
+      return saved;
+    });
   }
 
-  resetGuidance() {
-    return notImplemented("Student guidance");
+  async resetGuidance(studentId: string, stageId: GuidanceStage) {
+    return this.withTransaction(async (client) => {
+      const workflow = createDefaultStudentWorkflowState().guidance[stageId];
+      await this.replaceGuidanceWorkflowRecords(studentId, stageId, workflow, client);
+      const saved = await this.readGuidanceWorkflow(studentId, stageId, client);
+
+      if (!saved) {
+        throw new Error("Student guidance workflow was not saved.");
+      }
+
+      return saved;
+    });
   }
 
-  getExam() {
-    return notImplemented("Student exam");
+  async getExam(studentId: string, stageId: ExamStage) {
+    return this.ensureExamWorkflow(studentId, stageId);
   }
 
-  updateExam() {
-    return notImplemented("Student exam");
+  async updateExam(
+    studentId: string,
+    stageId: ExamStage,
+    mutator: (workflow: ExamWorkflow) => void
+  ) {
+    return this.withTransaction(async (client) => {
+      const workflow = await this.ensureExamWorkflowWith(studentId, stageId, client);
+      mutator(workflow);
+      await this.replaceExamWorkflowRecords(studentId, stageId, workflow, client);
+      const saved = await this.readExamWorkflow(studentId, stageId, client);
+
+      if (!saved) {
+        throw new Error("Student exam workflow was not saved.");
+      }
+
+      return saved;
+    });
   }
 
-  resetExam() {
-    return notImplemented("Student exam");
+  async resetExam(studentId: string, stageId: ExamStage) {
+    return this.withTransaction(async (client) => {
+      const workflow = createDefaultStudentWorkflowState().exams[stageId];
+      await this.replaceExamWorkflowRecords(studentId, stageId, workflow, client);
+      const saved = await this.readExamWorkflow(studentId, stageId, client);
+
+      if (!saved) {
+        throw new Error("Student exam workflow was not saved.");
+      }
+
+      return saved;
+    });
   }
 
-  getRevision() {
-    return notImplemented("Student revision");
+  async getRevision(studentId: string, stageId: RevisionStage) {
+    return this.ensureRevisionWorkflow(studentId, stageId);
   }
 
-  updateRevision() {
-    return notImplemented("Student revision");
+  async updateRevision(
+    studentId: string,
+    stageId: RevisionStage,
+    mutator: (workflow: RevisionWorkflow) => void
+  ) {
+    return this.withTransaction(async (client) => {
+      const workflow = await this.ensureRevisionWorkflowWith(studentId, stageId, client);
+      mutator(workflow);
+      await this.replaceRevisionWorkflowRecords(studentId, stageId, workflow, client);
+      const saved = await this.readRevisionWorkflow(studentId, stageId, client);
+
+      if (!saved) {
+        throw new Error("Student revision workflow was not saved.");
+      }
+
+      return saved;
+    });
   }
 
-  resetRevision() {
-    return notImplemented("Student revision");
+  async resetRevision(studentId: string, stageId: RevisionStage) {
+    return this.withTransaction(async (client) => {
+      const workflow = createDefaultStudentWorkflowState().revisions[stageId];
+      await this.replaceRevisionWorkflowRecords(studentId, stageId, workflow, client);
+      const saved = await this.readRevisionWorkflow(studentId, stageId, client);
+
+      if (!saved) {
+        throw new Error("Student revision workflow was not saved.");
+      }
+
+      return saved;
+    });
   }
 
   private async ensureProgressSteps(
@@ -593,6 +879,999 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
     );
 
     return result.rows.map(toThesisSubmission);
+  }
+
+  private async ensureGuidanceWorkflow(studentId: string, stageId: GuidanceStage) {
+    const existing = await this.readGuidanceWorkflow(studentId, stageId, this.db);
+    if (existing) {
+      return existing;
+    }
+
+    return this.withTransaction(async (client) =>
+      this.replaceGuidanceWorkflowAndRead(
+        studentId,
+        stageId,
+        createDefaultStudentWorkflowState().guidance[stageId],
+        client
+      )
+    );
+  }
+
+  private async ensureGuidanceWorkflowWith(
+    studentId: string,
+    stageId: GuidanceStage,
+    client: PostgresTransactionClient
+  ) {
+    const existing = await this.readGuidanceWorkflow(studentId, stageId, client);
+    if (existing) {
+      return existing;
+    }
+
+    return this.replaceGuidanceWorkflowAndRead(
+      studentId,
+      stageId,
+      createDefaultStudentWorkflowState().guidance[stageId],
+      client
+    );
+  }
+
+  private async replaceGuidanceWorkflowAndRead(
+    studentId: string,
+    stageId: GuidanceStage,
+    workflow: GuidanceWorkflow,
+    client: PostgresTransactionClient
+  ) {
+    await this.replaceGuidanceWorkflowRecords(studentId, stageId, workflow, client);
+    const saved = await this.readGuidanceWorkflow(studentId, stageId, client);
+
+    if (!saved) {
+      throw new Error("Student guidance workflow was not saved.");
+    }
+
+    return saved;
+  }
+
+  private async readGuidanceWorkflow(
+    studentId: string,
+    stageId: GuidanceStage,
+    db: PostgresQueryExecutor
+  ): Promise<GuidanceWorkflow | null> {
+    const workflowResult = await db.query<GuidanceWorkflowRow>(
+      `
+        SELECT
+          id,
+          stage_id,
+          google_docs_link,
+          final_file_ref,
+          pembimbing1_approved,
+          pembimbing2_approved,
+          guidance_status,
+          guidance_requested_at,
+          guidance_approved_at,
+          guidance_start_date,
+          guidance_start_time,
+          guidance_note,
+          guidance_approval_note
+        FROM guidance_workflows
+        WHERE student_id = $1
+          AND stage_id = $2
+        LIMIT 1
+      `,
+      [studentId, stageId]
+    );
+
+    const workflowRow = workflowResult.rows[0];
+    if (!workflowRow) {
+      return null;
+    }
+
+    const sessionsResult = await db.query<GuidanceSessionRow>(
+      `
+        SELECT
+          id,
+          session_number,
+          title,
+          status,
+          session_status,
+          session_start_date,
+          session_start_time,
+          catatan_mahasiswa,
+          catatan_koordinator
+        FROM guidance_sessions
+        WHERE guidance_workflow_id = $1
+        ORDER BY session_number ASC
+      `,
+      [workflowRow.id]
+    );
+    const chatsResult = await db.query<GuidanceChatRow>(
+      `
+        SELECT
+          guidance_chats.id,
+          guidance_sessions.session_number,
+          guidance_chats.sender_name_snapshot,
+          guidance_chats.sender_role,
+          guidance_chats.message,
+          guidance_chats.created_at
+        FROM guidance_chats
+        INNER JOIN guidance_sessions
+          ON guidance_sessions.id = guidance_chats.guidance_session_id
+        WHERE guidance_sessions.guidance_workflow_id = $1
+        ORDER BY guidance_sessions.session_number ASC, guidance_chats.created_at ASC
+      `,
+      [workflowRow.id]
+    );
+    const chatsBySession = new Map<number, GuidanceSession["chats"]>();
+
+    for (const chat of chatsResult.rows) {
+      const current = chatsBySession.get(chat.session_number) || [];
+      current.push({
+        id: chat.id,
+        senderName: chat.sender_name_snapshot,
+        senderRole: chat.sender_role,
+        message: chat.message,
+        timestamp: toIsoOrNull(chat.created_at) || "",
+      });
+      chatsBySession.set(chat.session_number, current);
+    }
+
+    return {
+      stageId: workflowRow.stage_id,
+      googleDocsLink: workflowRow.google_docs_link,
+      finalFile: workflowRow.final_file_ref,
+      pembimbing1Approved: workflowRow.pembimbing1_approved,
+      pembimbing2Approved: workflowRow.pembimbing2_approved,
+      guidanceStatus: workflowRow.guidance_status,
+      guidanceRequestedAt: toIsoOrNull(workflowRow.guidance_requested_at),
+      guidanceApprovedAt: toIsoOrNull(workflowRow.guidance_approved_at),
+      guidanceStartDate: toDateOnlyOrNull(workflowRow.guidance_start_date),
+      guidanceTime: toTimeOnlyOrNull(workflowRow.guidance_start_time),
+      guidanceNote: workflowRow.guidance_note,
+      guidanceApprovalNote: workflowRow.guidance_approval_note,
+      sessions: sessionsResult.rows.map((session) => ({
+        id: session.session_number,
+        title: session.title,
+        status: session.status,
+        chats: chatsBySession.get(session.session_number) || [],
+        sessionStatus: session.session_status,
+        sessionStartDate: toDateOnlyOrNull(session.session_start_date),
+        sessionStartTime: toTimeOnlyOrNull(session.session_start_time),
+        catatanMahasiswa: session.catatan_mahasiswa || undefined,
+        catatanKoordinator: session.catatan_koordinator || undefined,
+      })),
+    };
+  }
+
+  private async replaceGuidanceWorkflowRecords(
+    studentId: string,
+    stageId: GuidanceStage,
+    workflow: GuidanceWorkflow,
+    client: PostgresTransactionClient
+  ) {
+    const workflowId = await this.upsertGuidanceWorkflow(studentId, stageId, workflow, client);
+    await client.query(
+      `
+        DELETE FROM guidance_sessions
+        WHERE guidance_workflow_id = $1
+      `,
+      [workflowId]
+    );
+
+    for (const session of workflow.sessions) {
+      const insertedSession = await client.query<{ id: string }>(
+        `
+          INSERT INTO guidance_sessions (
+            guidance_workflow_id,
+            session_number,
+            title,
+            status,
+            session_status,
+            session_start_date,
+            session_start_time,
+            catatan_mahasiswa,
+            catatan_koordinator,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+          RETURNING id
+        `,
+        [
+          workflowId,
+          session.id,
+          session.title,
+          session.status,
+          session.sessionStatus,
+          session.sessionStartDate,
+          session.sessionStartTime,
+          session.catatanMahasiswa || null,
+          session.catatanKoordinator || null,
+        ]
+      );
+      const sessionId = insertedSession.rows[0]?.id;
+
+      if (!sessionId) {
+        throw new Error("Student guidance session was not saved.");
+      }
+
+      await this.insertGuidanceChats(sessionId, session.chats, client);
+    }
+  }
+
+  private async upsertGuidanceWorkflow(
+    studentId: string,
+    stageId: GuidanceStage,
+    workflow: GuidanceWorkflow,
+    client: PostgresTransactionClient
+  ) {
+    const result = await client.query<GuidanceWorkflowRow>(
+      `
+        INSERT INTO guidance_workflows (
+          student_id,
+          stage_id,
+          google_docs_link,
+          final_file_ref,
+          pembimbing1_approved,
+          pembimbing2_approved,
+          guidance_status,
+          guidance_requested_at,
+          guidance_approved_at,
+          guidance_start_date,
+          guidance_start_time,
+          guidance_note,
+          guidance_approval_note,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+        ON CONFLICT (student_id, stage_id) DO UPDATE
+        SET
+          google_docs_link = EXCLUDED.google_docs_link,
+          final_file_ref = EXCLUDED.final_file_ref,
+          pembimbing1_approved = EXCLUDED.pembimbing1_approved,
+          pembimbing2_approved = EXCLUDED.pembimbing2_approved,
+          guidance_status = EXCLUDED.guidance_status,
+          guidance_requested_at = EXCLUDED.guidance_requested_at,
+          guidance_approved_at = EXCLUDED.guidance_approved_at,
+          guidance_start_date = EXCLUDED.guidance_start_date,
+          guidance_start_time = EXCLUDED.guidance_start_time,
+          guidance_note = EXCLUDED.guidance_note,
+          guidance_approval_note = EXCLUDED.guidance_approval_note,
+          updated_at = NOW()
+        RETURNING id,
+          stage_id,
+          google_docs_link,
+          final_file_ref,
+          pembimbing1_approved,
+          pembimbing2_approved,
+          guidance_status,
+          guidance_requested_at,
+          guidance_approved_at,
+          guidance_start_date,
+          guidance_start_time,
+          guidance_note,
+          guidance_approval_note
+      `,
+      [
+        studentId,
+        stageId,
+        workflow.googleDocsLink,
+        workflow.finalFile,
+        workflow.pembimbing1Approved,
+        workflow.pembimbing2Approved,
+        workflow.guidanceStatus,
+        workflow.guidanceRequestedAt,
+        workflow.guidanceApprovedAt,
+        workflow.guidanceStartDate,
+        workflow.guidanceTime,
+        workflow.guidanceNote,
+        workflow.guidanceApprovalNote,
+      ]
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error("Student guidance workflow was not saved.");
+    }
+
+    return row.id;
+  }
+
+  private async insertGuidanceChats(
+    sessionId: string,
+    chats: GuidanceSession["chats"],
+    client: PostgresTransactionClient
+  ) {
+    for (const chat of chats) {
+      await client.query(
+        `
+          INSERT INTO guidance_chats (
+            id,
+            guidance_session_id,
+            sender_name_snapshot,
+            sender_role,
+            message,
+            created_at
+          )
+          VALUES (
+            COALESCE($1::uuid, gen_random_uuid()),
+            $2,
+            $3,
+            $4,
+            $5,
+            $6
+          )
+        `,
+        [
+          toUuidOrNull(chat.id),
+          sessionId,
+          chat.senderName,
+          chat.senderRole,
+          chat.message,
+          toTimestampOrNow(chat.timestamp),
+        ]
+      );
+    }
+  }
+
+  private async ensureExamWorkflow(studentId: string, stageId: ExamStage) {
+    const existing = await this.readExamWorkflow(studentId, stageId, this.db);
+    if (existing) {
+      return existing;
+    }
+
+    return this.withTransaction(async (client) =>
+      this.replaceExamWorkflowAndRead(
+        studentId,
+        stageId,
+        createDefaultStudentWorkflowState().exams[stageId],
+        client
+      )
+    );
+  }
+
+  private async ensureExamWorkflowWith(
+    studentId: string,
+    stageId: ExamStage,
+    client: PostgresTransactionClient
+  ) {
+    const existing = await this.readExamWorkflow(studentId, stageId, client);
+    if (existing) {
+      return existing;
+    }
+
+    return this.replaceExamWorkflowAndRead(
+      studentId,
+      stageId,
+      createDefaultStudentWorkflowState().exams[stageId],
+      client
+    );
+  }
+
+  private async replaceExamWorkflowAndRead(
+    studentId: string,
+    stageId: ExamStage,
+    workflow: ExamWorkflow,
+    client: PostgresTransactionClient
+  ) {
+    await this.replaceExamWorkflowRecords(studentId, stageId, workflow, client);
+    const saved = await this.readExamWorkflow(studentId, stageId, client);
+
+    if (!saved) {
+      throw new Error("Student exam workflow was not saved.");
+    }
+
+    return saved;
+  }
+
+  private async readExamWorkflow(
+    studentId: string,
+    stageId: ExamStage,
+    db: PostgresQueryExecutor
+  ): Promise<ExamWorkflow | null> {
+    const examResult = await db.query<ExamRow>(
+      `
+        SELECT
+          id,
+          stage_id,
+          status,
+          google_docs_link,
+          submitted_at,
+          grade,
+          result_status,
+          revision_notes,
+          schedule_date,
+          schedule_start_time,
+          schedule_end_time,
+          schedule_room,
+          schedule_location
+        FROM exams
+        WHERE student_id = $1
+          AND stage_id = $2
+        LIMIT 1
+      `,
+      [studentId, stageId]
+    );
+
+    const exam = examResult.rows[0];
+    if (!exam) {
+      return null;
+    }
+
+    const requirementsResult = await db.query<ExamRequirementRow>(
+      `
+        SELECT
+          id,
+          requirement_key,
+          label,
+          fulfilled,
+          note
+        FROM exam_requirements
+        WHERE exam_id = $1
+        ORDER BY created_at ASC, label ASC
+      `,
+      [exam.id]
+    );
+    const panelistsResult = await db.query<ExamPanelistRow>(
+      `
+        SELECT
+          id,
+          panelist_key,
+          role,
+          role_label,
+          name_snapshot,
+          nidn_snapshot,
+          approved
+        FROM exam_panelists
+        WHERE exam_id = $1
+        ORDER BY
+          CASE role
+            WHEN 'ketua-sidang' THEN 1
+            WHEN 'penguji1' THEN 2
+            WHEN 'penguji2' THEN 3
+            ELSE 4
+          END,
+          created_at ASC
+      `,
+      [exam.id]
+    );
+    const scheduleDate = toDateOnlyOrNull(exam.schedule_date);
+    const scheduleTime = toScheduleTimeRange(
+      exam.schedule_start_time,
+      exam.schedule_end_time
+    );
+    const hasSchedule = Boolean(
+      scheduleDate ||
+        scheduleTime ||
+        exam.schedule_room ||
+        exam.schedule_location
+    );
+
+    return {
+      stageId: exam.stage_id,
+      status: exam.status,
+      googleDocsLink: exam.google_docs_link,
+      submittedAt: toIsoOrNull(exam.submitted_at),
+      grade: exam.grade,
+      resultStatus: exam.result_status,
+      revisionNotes: toStringArray(exam.revision_notes),
+      requirements: requirementsResult.rows.map((requirement) => ({
+        id: requirement.requirement_key || requirement.id,
+        label: requirement.label,
+        fulfilled: requirement.fulfilled,
+        note: requirement.note || undefined,
+      })),
+      panelists: panelistsResult.rows.map((panelist) => ({
+        id: panelist.panelist_key || panelist.id,
+        role: panelist.role,
+        roleLabel: panelist.role_label,
+        name: panelist.name_snapshot,
+        nidn: panelist.nidn_snapshot || "",
+        approved: panelist.approved,
+      })),
+      schedule: hasSchedule
+        ? {
+            tanggal: scheduleDate || "",
+            waktu: scheduleTime,
+            ruang: exam.schedule_room || "",
+            lokasi: exam.schedule_location || "",
+          }
+        : null,
+    };
+  }
+
+  private async replaceExamWorkflowRecords(
+    studentId: string,
+    stageId: ExamStage,
+    workflow: ExamWorkflow,
+    client: PostgresTransactionClient
+  ) {
+    const examId = await this.upsertExamWorkflow(studentId, stageId, workflow, client);
+    await client.query(
+      `
+        DELETE FROM exam_requirements
+        WHERE exam_id = $1
+      `,
+      [examId]
+    );
+    await client.query(
+      `
+        DELETE FROM exam_panelists
+        WHERE exam_id = $1
+      `,
+      [examId]
+    );
+    await this.insertExamRequirements(examId, workflow.requirements, client);
+    await this.insertExamPanelists(examId, workflow.panelists, client);
+  }
+
+  private async upsertExamWorkflow(
+    studentId: string,
+    stageId: ExamStage,
+    workflow: ExamWorkflow,
+    client: PostgresTransactionClient
+  ) {
+    const schedule = workflow.schedule;
+    const scheduleTime = parseScheduleTimeRange(schedule?.waktu);
+    const result = await client.query<ExamRow>(
+      `
+        INSERT INTO exams (
+          student_id,
+          stage_id,
+          status,
+          google_docs_link,
+          submitted_at,
+          grade,
+          result_status,
+          revision_notes,
+          schedule_date,
+          schedule_start_time,
+          schedule_end_time,
+          schedule_room,
+          schedule_location,
+          updated_at
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, NOW()
+        )
+        ON CONFLICT (student_id, stage_id) DO UPDATE
+        SET
+          status = EXCLUDED.status,
+          google_docs_link = EXCLUDED.google_docs_link,
+          submitted_at = EXCLUDED.submitted_at,
+          grade = EXCLUDED.grade,
+          result_status = EXCLUDED.result_status,
+          revision_notes = EXCLUDED.revision_notes,
+          schedule_date = EXCLUDED.schedule_date,
+          schedule_start_time = EXCLUDED.schedule_start_time,
+          schedule_end_time = EXCLUDED.schedule_end_time,
+          schedule_room = EXCLUDED.schedule_room,
+          schedule_location = EXCLUDED.schedule_location,
+          updated_at = NOW()
+        RETURNING
+          id,
+          stage_id,
+          status,
+          google_docs_link,
+          submitted_at,
+          grade,
+          result_status,
+          revision_notes,
+          schedule_date,
+          schedule_start_time,
+          schedule_end_time,
+          schedule_room,
+          schedule_location
+      `,
+      [
+        studentId,
+        stageId,
+        workflow.status,
+        workflow.googleDocsLink,
+        workflow.submittedAt,
+        workflow.grade,
+        workflow.resultStatus,
+        JSON.stringify(workflow.revisionNotes),
+        schedule?.tanggal || null,
+        scheduleTime.startTime,
+        scheduleTime.endTime,
+        schedule?.ruang || null,
+        schedule?.lokasi || null,
+      ]
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error("Student exam workflow was not saved.");
+    }
+
+    return row.id;
+  }
+
+  private async insertExamRequirements(
+    examId: string,
+    requirements: ExamWorkflow["requirements"],
+    client: PostgresTransactionClient
+  ) {
+    for (const requirement of requirements) {
+      await client.query(
+        `
+          INSERT INTO exam_requirements (
+            id,
+            exam_id,
+            requirement_key,
+            label,
+            fulfilled,
+            note,
+            updated_at
+          )
+          VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, NOW())
+        `,
+        [
+          toUuidOrNull(requirement.id),
+          examId,
+          requirement.id,
+          requirement.label,
+          requirement.fulfilled,
+          requirement.note || null,
+        ]
+      );
+    }
+  }
+
+  private async insertExamPanelists(
+    examId: string,
+    panelists: ExamWorkflow["panelists"],
+    client: PostgresTransactionClient
+  ) {
+    for (const panelist of panelists) {
+      await client.query(
+        `
+          INSERT INTO exam_panelists (
+            id,
+            exam_id,
+            panelist_key,
+            role,
+            role_label,
+            name_snapshot,
+            nidn_snapshot,
+            approved,
+            updated_at
+          )
+          VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, NOW())
+        `,
+        [
+          toUuidOrNull(panelist.id),
+          examId,
+          panelist.id,
+          panelist.role,
+          panelist.roleLabel,
+          panelist.name,
+          panelist.nidn || null,
+          panelist.approved,
+        ]
+      );
+    }
+  }
+
+  private async ensureRevisionWorkflow(studentId: string, stageId: RevisionStage) {
+    const existing = await this.readRevisionWorkflow(studentId, stageId, this.db);
+    if (existing) {
+      return existing;
+    }
+
+    return this.withTransaction(async (client) =>
+      this.replaceRevisionWorkflowAndRead(
+        studentId,
+        stageId,
+        createDefaultStudentWorkflowState().revisions[stageId],
+        client
+      )
+    );
+  }
+
+  private async ensureRevisionWorkflowWith(
+    studentId: string,
+    stageId: RevisionStage,
+    client: PostgresTransactionClient
+  ) {
+    const existing = await this.readRevisionWorkflow(studentId, stageId, client);
+    if (existing) {
+      return existing;
+    }
+
+    return this.replaceRevisionWorkflowAndRead(
+      studentId,
+      stageId,
+      createDefaultStudentWorkflowState().revisions[stageId],
+      client
+    );
+  }
+
+  private async replaceRevisionWorkflowAndRead(
+    studentId: string,
+    stageId: RevisionStage,
+    workflow: RevisionWorkflow,
+    client: PostgresTransactionClient
+  ) {
+    await this.replaceRevisionWorkflowRecords(studentId, stageId, workflow, client);
+    const saved = await this.readRevisionWorkflow(studentId, stageId, client);
+
+    if (!saved) {
+      throw new Error("Student revision workflow was not saved.");
+    }
+
+    return saved;
+  }
+
+  private async readRevisionWorkflow(
+    studentId: string,
+    stageId: RevisionStage,
+    db: PostgresQueryExecutor
+  ): Promise<RevisionWorkflow | null> {
+    const workflowResult = await db.query<RevisionWorkflowRow>(
+      `
+        SELECT
+          id,
+          stage_id,
+          final_file_ref,
+          penguji1_approved,
+          penguji2_approved,
+          ketua_sidang_status,
+          submitted_at
+        FROM revision_workflows
+        WHERE student_id = $1
+          AND stage_id = $2
+        LIMIT 1
+      `,
+      [studentId, stageId]
+    );
+
+    const workflow = workflowResult.rows[0];
+    if (!workflow) {
+      return null;
+    }
+
+    const itemsResult = await db.query<RevisionItemRow>(
+      `
+        SELECT
+          id,
+          item_number,
+          title,
+          topik,
+          materi,
+          assigned_to_name_snapshot,
+          status,
+          submitted_at,
+          penyelesaian,
+          penyelesaian_link
+        FROM revision_items
+        WHERE revision_workflow_id = $1
+        ORDER BY item_number ASC
+      `,
+      [workflow.id]
+    );
+    const chatsResult = await db.query<RevisionChatRow>(
+      `
+        SELECT
+          revision_chats.id,
+          revision_items.item_number,
+          revision_chats.sender_name_snapshot,
+          revision_chats.sender_role,
+          revision_chats.message,
+          revision_chats.created_at
+        FROM revision_chats
+        INNER JOIN revision_items
+          ON revision_items.id = revision_chats.revision_item_id
+        WHERE revision_items.revision_workflow_id = $1
+        ORDER BY revision_items.item_number ASC, revision_chats.created_at ASC
+      `,
+      [workflow.id]
+    );
+    const chatsByItem = new Map<number, RevisionItem["chats"]>();
+
+    for (const chat of chatsResult.rows) {
+      const current = chatsByItem.get(chat.item_number) || [];
+      current.push({
+        id: chat.id,
+        senderName: chat.sender_name_snapshot,
+        senderRole: chat.sender_role,
+        message: chat.message,
+        timestamp: toIsoOrNull(chat.created_at) || "",
+      });
+      chatsByItem.set(chat.item_number, current);
+    }
+
+    return {
+      stageId: workflow.stage_id,
+      finalFile: workflow.final_file_ref,
+      penguji1Approved: workflow.penguji1_approved,
+      penguji2Approved: workflow.penguji2_approved,
+      ketuaSidangStatus: workflow.ketua_sidang_status,
+      submittedAt: toIsoOrNull(workflow.submitted_at),
+      items: itemsResult.rows.map((item) => ({
+        id: item.item_number,
+        sourceRevisionItemId: item.id,
+        title: item.title,
+        topik: item.topik,
+        materi: item.materi,
+        assignedTo: item.assigned_to_name_snapshot || "",
+        status: item.status,
+        chats: chatsByItem.get(item.item_number) || [],
+        submittedAt: toIsoOrNull(item.submitted_at) || undefined,
+        penyelesaian: item.penyelesaian || undefined,
+        penyelesaianLink: item.penyelesaian_link || undefined,
+      })),
+    };
+  }
+
+  private async replaceRevisionWorkflowRecords(
+    studentId: string,
+    stageId: RevisionStage,
+    workflow: RevisionWorkflow,
+    client: PostgresTransactionClient
+  ) {
+    const workflowId = await this.upsertRevisionWorkflow(studentId, stageId, workflow, client);
+    const itemNumbers = workflow.items.map((item) => item.id);
+
+    for (const item of workflow.items) {
+      const insertedItem = await client.query<{ id: string }>(
+        `
+          INSERT INTO revision_items (
+            id,
+            revision_workflow_id,
+            item_number,
+            title,
+            topik,
+            materi,
+            assigned_to_name_snapshot,
+            status,
+            submitted_at,
+            penyelesaian,
+            penyelesaian_link,
+            updated_at
+          )
+          VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+          ON CONFLICT (revision_workflow_id, item_number) DO UPDATE
+          SET
+            title = EXCLUDED.title,
+            topik = EXCLUDED.topik,
+            materi = EXCLUDED.materi,
+            assigned_to_name_snapshot = EXCLUDED.assigned_to_name_snapshot,
+            status = EXCLUDED.status,
+            submitted_at = EXCLUDED.submitted_at,
+            penyelesaian = EXCLUDED.penyelesaian,
+            penyelesaian_link = EXCLUDED.penyelesaian_link,
+            updated_at = NOW()
+          RETURNING id
+        `,
+        [
+          toUuidOrNull(item.sourceRevisionItemId),
+          workflowId,
+          item.id,
+          item.title,
+          item.topik,
+          item.materi,
+          item.assignedTo || null,
+          item.status,
+          item.submittedAt || null,
+          item.penyelesaian || null,
+          item.penyelesaianLink || null,
+        ]
+      );
+      const itemId = insertedItem.rows[0]?.id;
+
+      if (!itemId) {
+        throw new Error("Student revision item was not saved.");
+      }
+
+      await client.query(
+        `
+          DELETE FROM revision_chats
+          WHERE revision_item_id = $1
+        `,
+        [itemId]
+      );
+      await this.insertRevisionChats(itemId, item.chats, client);
+    }
+
+    await client.query(
+      `
+        DELETE FROM revision_items
+        WHERE revision_workflow_id = $1
+          AND NOT (item_number = ANY($2::int[]))
+      `,
+      [workflowId, itemNumbers]
+    );
+  }
+
+  private async upsertRevisionWorkflow(
+    studentId: string,
+    stageId: RevisionStage,
+    workflow: RevisionWorkflow,
+    client: PostgresTransactionClient
+  ) {
+    const result = await client.query<RevisionWorkflowRow>(
+      `
+        INSERT INTO revision_workflows (
+          student_id,
+          stage_id,
+          final_file_ref,
+          penguji1_approved,
+          penguji2_approved,
+          ketua_sidang_status,
+          submitted_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        ON CONFLICT (student_id, stage_id) DO UPDATE
+        SET
+          final_file_ref = EXCLUDED.final_file_ref,
+          penguji1_approved = EXCLUDED.penguji1_approved,
+          penguji2_approved = EXCLUDED.penguji2_approved,
+          ketua_sidang_status = EXCLUDED.ketua_sidang_status,
+          submitted_at = EXCLUDED.submitted_at,
+          updated_at = NOW()
+        RETURNING
+          id,
+          stage_id,
+          final_file_ref,
+          penguji1_approved,
+          penguji2_approved,
+          ketua_sidang_status,
+          submitted_at
+      `,
+      [
+        studentId,
+        stageId,
+        workflow.finalFile,
+        workflow.penguji1Approved,
+        workflow.penguji2Approved,
+        workflow.ketuaSidangStatus,
+        workflow.submittedAt,
+      ]
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error("Student revision workflow was not saved.");
+    }
+
+    return row.id;
+  }
+
+  private async insertRevisionChats(
+    itemId: string,
+    chats: RevisionItem["chats"],
+    client: PostgresTransactionClient
+  ) {
+    for (const chat of chats) {
+      await client.query(
+        `
+          INSERT INTO revision_chats (
+            id,
+            revision_item_id,
+            sender_name_snapshot,
+            sender_role,
+            message,
+            created_at
+          )
+          VALUES (
+            COALESCE($1::uuid, gen_random_uuid()),
+            $2,
+            $3,
+            $4,
+            $5,
+            $6
+          )
+        `,
+        [
+          toUuidOrNull(chat.id),
+          itemId,
+          chat.senderName,
+          chat.senderRole,
+          chat.message,
+          toTimestampOrNow(chat.timestamp),
+        ]
+      );
+    }
   }
 
   private async withTransaction<T>(

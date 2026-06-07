@@ -5,7 +5,7 @@ import { createDefaultStudentWorkflowState } from "./default-student-workflow-st
 const demoActivatedAt = "2026-06-06T00:00:00.000Z";
 
 export const createDefaultDatabaseState = (): DatabaseState => ({
-  schemaVersion: 7,
+  schemaVersion: 9,
   users: [
     {
       id: "usr_mhs_01",
@@ -143,15 +143,37 @@ export const createDefaultDatabaseState = (): DatabaseState => ({
       createdBy: null,
     },
   ],
+  lecturerProfiles: {
+    usr_dosen_01: {
+      userId: "usr_dosen_01",
+      nidn: "221011401065",
+      expertise: "Farmasetika",
+      quotaLimit: 8,
+      updatedAt: demoActivatedAt,
+    },
+    usr_multi_01: {
+      userId: "usr_multi_01",
+      nidn: "221011401099",
+      expertise: "Manajemen Farmasi",
+      quotaLimit: 8,
+      updatedAt: demoActivatedAt,
+    },
+  },
   finalProjectRegistrations: [],
+  guidanceRequests: [],
+  guidanceMaterials: [],
   refreshTokens: [],
   auditLogs: [],
+  auditExportAttempts: [],
   permissionsByRole: {
     mahasiswa: [
       "student.workflow.read",
       "student.workflow.submit",
       "student.final-project-registration.read",
       "student.final-project-registration.submit",
+      "student.guidance-request.read",
+      "student.guidance-request.submit",
+      "student.guidance-material.submit",
     ],
     dosen: [
       "lecturer.workflow.read",
@@ -160,6 +182,10 @@ export const createDefaultDatabaseState = (): DatabaseState => ({
       "lecturer.exam.assess",
       "lecturer.revision.review",
       "lecturer.final-project-registration.read",
+      "lecturer.guidance-request.read",
+      "lecturer.guidance-request.validate",
+      "lecturer.guidance-material.read",
+      "lecturer.guidance-material.validate",
     ],
     admin: [
       "admin.users.manage",
@@ -176,6 +202,7 @@ export const createDefaultDatabaseState = (): DatabaseState => ({
       "coordinator.monitoring.read",
       "coordinator.final-project-registration.read",
       "coordinator.final-project-registration.validate",
+      "coordinator.guidance.read",
     ],
   },
   masterData: {

@@ -1,13 +1,21 @@
+import crypto from "node:crypto";
 import type {
   ExamStage,
   GuidanceStage,
   RevisionStage,
   StepId,
   StepStatus,
+  SupervisorAssignment,
+  UserAccount,
 } from "../../domain/types";
+import { notFound, validationError } from "../../http/errors";
 import { json } from "../../http/response";
 import type { Router } from "../../http/router";
-import { studentWorkflowRepository } from "../../repositories";
+import {
+  finalProjectRegistrationRepository,
+  studentWorkflowRepository,
+  userRepository,
+} from "../../repositories";
 import {
   validateExamAssessment,
   validateExamStatus,
@@ -18,16 +26,55 @@ import {
   validateRevisionItemStatus,
   validateScheduleApproval,
   validateThesisSubmissions,
+  validateLecturerQuotaUpdate,
   validateProgressUpdate,
+  validateSupervisorAssignmentUpdate,
 } from "../../validation/request-validators";
 import { auditService } from "../audit/audit-service";
 import { authService } from "../auth/auth-service";
+import {
+  assertRevisionStepCanBeCompleted,
+  getRevisionCompletionGateStatus,
+  isRevisionStepId,
+  recordRevisionCompletionGateAudit,
+} from "../student/revision-completion-gate";
 
 const readGuidanceStage = (stageId: string) => stageId as GuidanceStage;
 const readExamStage = (stageId: string) => stageId as ExamStage;
 const readRevisionStage = (stageId: string) => stageId as RevisionStage;
 const readStepId = (stepId: string) => stepId as StepId;
 const resourceId = (studentId: string, itemId: string) => `${studentId}:${itemId}`;
+
+const ensureLecturer = async (userId: string, path: string) => {
+  const user = await userRepository.findById(userId);
+  const roles = user ? await userRepository.getRoles(user.id) : [];
+
+  if (!user || !roles.includes("dosen")) {
+    throw validationError("Payload tidak valid.", {
+      [path]: ["User dosen tidak ditemukan."],
+    });
+  }
+
+  return user;
+};
+
+const buildSupervisorAssignment = (
+  lecturer: UserAccount,
+  supervisorOrder: 1 | 2,
+  actor: UserAccount,
+  timestamp: string,
+  coordinatorNote?: string
+): SupervisorAssignment => ({
+  id: crypto.randomUUID(),
+  lecturerId: lecturer.id,
+  supervisorOrder,
+  lecturerName: lecturer.name,
+  lecturerIdentifier: lecturer.identifier,
+  status: "Aktif",
+  assignedAt: timestamp,
+  assignedBy: actor.id,
+  coordinatorNote,
+});
 
 const lecturerReadPermissions = [
   "lecturer.workflow.read",
@@ -48,6 +95,14 @@ const coordinatorReadPermissions = [
 ];
 
 export const registerRoleWorkflowRoutes = (router: Router) => {
+  router.get("/lecturer/students", async ({ headers }) => {
+    const actor = await authService.requireAnyPermission(headers, lecturerReadPermissions);
+    return json({
+      data: await userRepository.listStudentDirectory({ lecturerId: actor.id }),
+      meta: { scope: "lecturer", lecturerId: actor.id },
+    });
+  });
+
   router.get("/lecturer/students/:studentId/progress", async ({ params, headers }) => {
     await authService.requireAnyPermission(headers, lecturerReadPermissions);
     return json({
@@ -198,6 +253,23 @@ export const registerRoleWorkflowRoutes = (router: Router) => {
     });
   });
 
+  router.get("/lecturer/students/:studentId/revisions/:stageId/completion-gate", async ({ params, headers }) => {
+    const actor = await authService.requireAnyPermission(headers, lecturerReadPermissions);
+    const stageId = readRevisionStage(params.stageId);
+    const gate = await getRevisionCompletionGateStatus(params.studentId, stageId);
+
+    await recordRevisionCompletionGateAudit({
+      actor,
+      action: "REVISION_COMPLETION_GATE_READ",
+      studentId: params.studentId,
+      stageId,
+      gate,
+      reason: "Lecturer read revision completion gate.",
+    });
+
+    return json({ data: gate, meta: { studentId: params.studentId } });
+  });
+
   router.patch("/lecturer/students/:studentId/revisions/:stageId/items/:itemId/status", async ({ body, params, headers }) => {
     const actor = await authService.requireAnyPermission(headers, [
       "lecturer.revision.review",
@@ -263,6 +335,124 @@ export const registerRoleWorkflowRoutes = (router: Router) => {
 };
 
 const registerCoordinatorWorkflowRoutes = (router: Router, prefix: string) => {
+  router.get(`${prefix}/lecturers`, async ({ headers }) => {
+    await authService.requireAnyPermission(headers, coordinatorReadPermissions);
+    return json({
+      data: await userRepository.listLecturerDirectory(),
+      meta: { scope: prefix.replace("/", "") },
+    });
+  });
+
+  router.patch(`${prefix}/lecturers/:lecturerId/quota`, async ({ body, params, headers }) => {
+    const actor = await authService.requireAnyPermission(headers, [
+      "coordinator.validation.manage",
+      "workflow.override",
+    ]);
+    const payload = validateLecturerQuotaUpdate(body);
+    await ensureLecturer(params.lecturerId, "params.lecturerId");
+    const before =
+      (await userRepository.listLecturerDirectory()).find(
+        (item) => item.id === params.lecturerId
+      ) || null;
+
+    if (!before) {
+      throw notFound("Dosen tidak ditemukan.");
+    }
+
+    const activeQuota = Math.max(before.p1Active, before.p2Active);
+    if (payload.quotaLimit < activeQuota) {
+      throw validationError("Payload tidak valid.", {
+        "body.quotaLimit": [
+          `Kuota tidak boleh kurang dari mahasiswa aktif (${activeQuota}).`,
+        ],
+      });
+    }
+
+    const after = await userRepository.updateLecturerQuota(params.lecturerId, {
+      quotaLimit: payload.quotaLimit,
+      actorId: actor.id,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (!after) {
+      throw notFound("Dosen tidak ditemukan.");
+    }
+
+    await auditService.record({
+      actor,
+      action: "COORDINATOR_LECTURER_QUOTA_UPDATED",
+      resourceType: "lecturer-quota",
+      resourceId: params.lecturerId,
+      before,
+      after,
+    });
+
+    return json({ data: after, meta: { lecturerId: params.lecturerId } });
+  });
+
+  router.get(`${prefix}/students`, async ({ headers }) => {
+    await authService.requireAnyPermission(headers, coordinatorReadPermissions);
+    return json({
+      data: await userRepository.listStudentDirectory(),
+      meta: { scope: prefix.replace("/", "") },
+    });
+  });
+
+  router.patch(
+    `${prefix}/students/:studentId/supervisor-assignments`,
+    async ({ body, params, headers }) => {
+      const actor = await authService.requireAnyPermission(headers, [
+        "coordinator.validation.manage",
+        "coordinator.final-project-registration.validate",
+        "workflow.override",
+      ]);
+      const payload = validateSupervisorAssignmentUpdate(body);
+      const before = await finalProjectRegistrationRepository.getActiveByStudentId(
+        params.studentId
+      );
+      const now = new Date().toISOString();
+      const supervisor1 = await ensureLecturer(
+        payload.pembimbing1Id,
+        "body.pembimbing1Id"
+      );
+      const supervisor2 = await ensureLecturer(
+        payload.pembimbing2Id,
+        "body.pembimbing2Id"
+      );
+      const assignments = [
+        buildSupervisorAssignment(supervisor1, 1, actor, now, payload.coordinatorNote),
+        buildSupervisorAssignment(supervisor2, 2, actor, now, payload.coordinatorNote),
+      ];
+      const after =
+        await finalProjectRegistrationRepository.replaceSupervisorAssignmentsByStudentId(
+          params.studentId,
+          assignments,
+          {
+            actorId: actor.id,
+            timestamp: now,
+            coordinatorNote: payload.coordinatorNote,
+          }
+        );
+
+      if (!after) {
+        throw notFound(
+          "Pendaftaran TA disetujui untuk mahasiswa ini tidak ditemukan."
+        );
+      }
+
+      await auditService.record({
+        actor,
+        action: "COORDINATOR_SUPERVISOR_ASSIGNMENTS_UPDATED",
+        resourceType: "supervisor-assignments",
+        resourceId: params.studentId,
+        before,
+        after,
+      });
+
+      return json({ data: after, meta: { studentId: params.studentId } });
+    }
+  );
+
   router.get(`${prefix}/students/:studentId/progress`, async ({ params, headers }) => {
     await authService.requireAnyPermission(headers, coordinatorReadPermissions);
     return json({
@@ -278,6 +468,9 @@ const registerCoordinatorWorkflowRoutes = (router: Router, prefix: string) => {
     ]);
     const stepId = readStepId(params.stepId);
     const { status } = validateProgressUpdate(body);
+    if (status === "completed" && isRevisionStepId(stepId)) {
+      await assertRevisionStepCanBeCompleted(params.studentId, stepId, actor);
+    }
     const before = await studentWorkflowRepository.getProgressSteps(params.studentId);
     const after = await studentWorkflowRepository.updateProgressStep(
       params.studentId,
@@ -430,5 +623,22 @@ const registerCoordinatorWorkflowRoutes = (router: Router, prefix: string) => {
       data: await studentWorkflowRepository.getRevision(params.studentId, readRevisionStage(params.stageId)),
       meta: { studentId: params.studentId },
     });
+  });
+
+  router.get(`${prefix}/students/:studentId/revisions/:stageId/completion-gate`, async ({ params, headers }) => {
+    const actor = await authService.requireAnyPermission(headers, coordinatorReadPermissions);
+    const stageId = readRevisionStage(params.stageId);
+    const gate = await getRevisionCompletionGateStatus(params.studentId, stageId);
+
+    await recordRevisionCompletionGateAudit({
+      actor,
+      action: "REVISION_COMPLETION_GATE_READ",
+      studentId: params.studentId,
+      stageId,
+      gate,
+      reason: "Coordinator read revision completion gate.",
+    });
+
+    return json({ data: gate, meta: { studentId: params.studentId } });
   });
 };

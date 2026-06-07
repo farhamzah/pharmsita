@@ -3,6 +3,7 @@ import { createJsonDatabaseAdapter } from "../database";
 import { getPostgresPool } from "../database/postgres/connection";
 import { PersistentAuditLogRepository } from "./persistent-audit-log-repository";
 import { PersistentFinalProjectRegistrationRepository } from "./persistent-final-project-registration-repository";
+import { PersistentGuidanceRequestRepository } from "./persistent-guidance-request-repository";
 import { PersistentMasterDataRepository } from "./persistent-master-data-repository";
 import { PersistentRefreshTokenRepository } from "./persistent-refresh-token-repository";
 import { PersistentStudentWorkflowRepository } from "./persistent-student-workflow-repository";
@@ -20,6 +21,7 @@ const createJsonRepositories = (): RepositoryRegistry => {
     auditLogRepository: new PersistentAuditLogRepository(databaseAdapter),
     studentWorkflowRepository: new PersistentStudentWorkflowRepository(databaseAdapter),
     finalProjectRegistrationRepository: new PersistentFinalProjectRegistrationRepository(databaseAdapter),
+    guidanceRequestRepository: new PersistentGuidanceRequestRepository(databaseAdapter),
   };
 };
 
@@ -36,3 +38,4 @@ export const auditLogRepository = repositories.auditLogRepository;
 export const studentWorkflowRepository = repositories.studentWorkflowRepository;
 export const finalProjectRegistrationRepository =
   repositories.finalProjectRegistrationRepository;
+export const guidanceRequestRepository = repositories.guidanceRequestRepository;

@@ -34,7 +34,82 @@ const listResponse = <T>(data: T[]): ListResponse<T> => ({
   },
 });
 
+const itemResponse = <T>(data: T) => ({ data });
+
 mockApiAdapter.register("GET", "/admin/users", () => listResponse(loadAdminAccounts()));
+mockApiAdapter.register<AdminAccount>("POST", "/admin/users", ({ body }) => {
+  const current = loadAdminAccounts();
+  const record = {
+    ...(body || {}),
+    id: body?.id || `acc_${Date.now()}`,
+    status: body?.status || "Aktif",
+    passwordStatus: "needs_activation",
+    forceChangeOnLogin: true,
+    firstLoginCompletedAt: null,
+    passwordChangedAt: null,
+  };
+  saveAdminAccounts([record, ...current]);
+  return itemResponse(record);
+});
+mockApiAdapter.register<Partial<AdminAccount>>("PATCH", "/admin/users/:userId", ({ body, params }) => {
+  let updated: AdminAccount | null = null;
+  const next = loadAdminAccounts().map((account) => {
+    if (account.id !== params.userId) return account;
+    updated = {
+      ...account,
+      ...(body || {}),
+      ...(body?.password
+        ? {
+            passwordStatus: "needs_activation",
+            forceChangeOnLogin: true,
+            firstLoginCompletedAt: null,
+            passwordChangedAt: null,
+          }
+        : {}),
+    };
+    return updated;
+  });
+  saveAdminAccounts(next);
+  return itemResponse(updated || next.find((account) => account.id === params.userId) || null);
+});
+mockApiAdapter.register<{ status: AdminAccount["status"] }>(
+  "PATCH",
+  "/admin/users/:userId/status",
+  ({ body, params }) => {
+    let updated: AdminAccount | null = null;
+    const next = loadAdminAccounts().map((account) => {
+      if (account.id !== params.userId) return account;
+      updated = {
+        ...account,
+        status: body?.status || account.status,
+      };
+      return updated;
+    });
+    saveAdminAccounts(next);
+    return itemResponse(updated || next.find((account) => account.id === params.userId) || null);
+  }
+);
+mockApiAdapter.register<{ password: string }>(
+  "POST",
+  "/admin/users/:userId/reset-password",
+  ({ params }) => {
+    let updated: AdminAccount | null = null;
+    const next = loadAdminAccounts().map((account) => {
+      if (account.id !== params.userId) return account;
+      updated = {
+        ...account,
+        passwordStatus: "needs_activation",
+        forceChangeOnLogin: true,
+        firstLoginCompletedAt: null,
+        passwordChangedAt: null,
+        passwordUpdatedAt: new Date().toISOString(),
+      };
+      return updated;
+    });
+    saveAdminAccounts(next);
+    return itemResponse(updated || next.find((account) => account.id === params.userId) || null);
+  }
+);
 mockApiAdapter.register("GET", "/master/lecturers", () =>
   listResponse(
     loadAdminAccounts().filter(
@@ -82,6 +157,27 @@ mockApiAdapter.register<AdminMasterRecord[]>("PUT", "/admin/master/requirements"
 export const adminApi = {
   listUsers() {
     return apiClient.get<ListResponse<AdminAccount>>("/admin/users");
+  },
+  createUser(account: AdminAccount) {
+    return apiClient.post<{ data: AdminAccount }, AdminAccount>("/admin/users", account);
+  },
+  updateUser(userId: string, account: Partial<AdminAccount>) {
+    return apiClient.patch<{ data: AdminAccount }, Partial<AdminAccount>>(
+      `/admin/users/${encodeURIComponent(userId)}`,
+      account
+    );
+  },
+  updateUserStatus(userId: string, status: AdminAccount["status"]) {
+    return apiClient.patch<{ data: AdminAccount }, { status: AdminAccount["status"] }>(
+      `/admin/users/${encodeURIComponent(userId)}/status`,
+      { status }
+    );
+  },
+  resetUserPassword(userId: string, password: string) {
+    return apiClient.post<{ data: AdminAccount }, { password: string }>(
+      `/admin/users/${encodeURIComponent(userId)}/reset-password`,
+      { password }
+    );
   },
   listPublicLecturers() {
     return apiClient.get<ListResponse<AdminAccount>>("/master/lecturers");

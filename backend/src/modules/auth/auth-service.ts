@@ -180,6 +180,61 @@ export class AuthService {
     };
   }
 
+  async updateProfile(headers: IncomingHttpHeaders, input: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    gender?: UserAccount["gender"];
+    birthDate?: string;
+    nim?: string;
+    programStudi?: string;
+    angkatan?: string;
+    kelas?: string;
+    skemaTA?: UserAccount["skemaTA"];
+    jenisTA?: string;
+    nidn?: string;
+    bidangKeahlian?: string[];
+    jabatanAkademik?: string;
+    peranSistem?: string[];
+    jabatan?: string;
+    hakAksesUtama?: string[];
+    divisi?: string;
+    tingkatAkses?: UserAccount["tingkatAkses"];
+    cakupanAkses?: string[];
+  }) {
+    const actor = await this.requireAuthenticated(headers);
+    const before = await userRepository.findById(actor.id);
+    const timestamp = new Date().toISOString();
+    const updated = await userRepository.updateProfile(actor.id, {
+      ...input,
+      actorId: actor.id,
+      timestamp,
+    });
+
+    if (!updated) {
+      throw badRequest("Profil gagal diperbarui.");
+    }
+
+    await auditService.record({
+      actor,
+      action: "AUTH_PROFILE_UPDATED",
+      resourceType: "user-profile",
+      resourceId: actor.id,
+      before,
+      after: updated,
+    });
+
+    return {
+      user: {
+        ...updated,
+        role: actor.role,
+      },
+      availableRoles: await userRepository.getRoles(actor.id),
+      permissions: await userRepository.getPermissions(actor.role),
+    };
+  }
+
   async refresh(refreshToken: string) {
     const now = new Date();
     const tokenHash = hashToken(refreshToken);

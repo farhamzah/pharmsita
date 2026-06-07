@@ -15,13 +15,14 @@ import {
 import { cn } from "@/lib/utils";
 import { isDemoModeEnabled } from "@/lib/demo-mode";
 import type { SidangData, SidangResultStatus } from "../../types/sidang";
-import { examApi, lecturerWorkflowApi, progressApi } from "../../../../core/api/domain";
+import { coordinatorWorkflowApi, examApi, lecturerWorkflowApi, progressApi } from "../../../../core/api/domain";
 
 interface SidangWorkflowProps {
   stageId: "sidang-proposal" | "sidang";
   role?: "mahasiswa" | "dosen";
   studentId?: string;
   useLecturerApi?: boolean;
+  useCoordinatorApi?: boolean;
   onStatusChange?: () => void;
 }
 
@@ -30,10 +31,12 @@ export const SidangWorkflow: React.FC<SidangWorkflowProps> = ({
   role = "mahasiswa",
   studentId = "1",
   useLecturerApi = false,
+  useCoordinatorApi = false,
   onStatusChange,
 }) => {
   const [data, setData] = useState<SidangData>(() => examApi.getCached(stageId));
   const isLecturerWorkflow = role === "dosen" && useLecturerApi;
+  const isCoordinatorWorkflow = role === "dosen" && useCoordinatorApi;
 
   // Edit Link States
   const [isEditingDoc, setIsEditingDoc] = useState(false);
@@ -46,7 +49,9 @@ export const SidangWorkflow: React.FC<SidangWorkflowProps> = ({
 
   useEffect(() => {
     let mounted = true;
-    const request = isLecturerWorkflow
+    const request = isCoordinatorWorkflow
+      ? coordinatorWorkflowApi.getExam(studentId, stageId)
+      : isLecturerWorkflow
       ? lecturerWorkflowApi.getExam(studentId, stageId)
       : examApi.get(stageId);
 
@@ -63,7 +68,7 @@ export const SidangWorkflow: React.FC<SidangWorkflowProps> = ({
     return () => {
       mounted = false;
     };
-  }, [stageId, studentId, isLecturerWorkflow]);
+  }, [stageId, studentId, isLecturerWorkflow, isCoordinatorWorkflow]);
 
   const handleSaveDocLink = async () => {
     const response = await examApi.updateDocsLink(stageId, docLinkInput);
@@ -76,6 +81,10 @@ export const SidangWorkflow: React.FC<SidangWorkflowProps> = ({
       grade: inputGrade,
       resultStatus: inputResult,
     };
+    if (isCoordinatorWorkflow) {
+      throw new Error("Coordinator exam view is read-only.");
+    }
+
     const response = isLecturerWorkflow
       ? await lecturerWorkflowApi.updateExamAssessment(studentId, stageId, payload)
       : await examApi.updateAssessment(stageId, payload);
@@ -86,6 +95,12 @@ export const SidangWorkflow: React.FC<SidangWorkflowProps> = ({
   };
 
   const handleResetSimulator = async () => {
+    if (isCoordinatorWorkflow) {
+      const response = await coordinatorWorkflowApi.getExam(studentId, stageId);
+      setData(response.data);
+      return;
+    }
+
     if (isLecturerWorkflow) {
       const response = await lecturerWorkflowApi.getExam(studentId, stageId);
       setData(response.data);

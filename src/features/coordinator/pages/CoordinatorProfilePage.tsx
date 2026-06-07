@@ -3,10 +3,12 @@ import RoleLayoutComponent from '../../../layouts/MainLayout';
 import ContentWrapper from '../../../components/ContentWrapper';
 import { UnifiedProfileView } from '../../../components/shared/UnifiedProfileView';
 import { mockCoordinatorProfiles } from '../../../mock-data/profiles';
+import { useSessionProfile } from '../../shared/hooks/useSessionProfile';
 
 export const CoordinatorProfilePage: React.FC = () => {
-  // Use default coordinator profile (Dr. Apt. Siti Nurhayati, M.Farm.)
-  const coordinatorProfile = mockCoordinatorProfiles[0];
+  const { profile: coordinatorProfile, isLoading, error, saveProfile } = useSessionProfile(
+    mockCoordinatorProfiles[0]
+  );
 
   return (
     <RoleLayoutComponent>
@@ -15,7 +17,11 @@ export const CoordinatorProfilePage: React.FC = () => {
         description="Kelola informasi pribadi, kontak terdaftar, jabatan struktural, serta tingkat otorisasi akses Anda."
       >
         <div className="animate-in fade-in duration-500">
-          <UnifiedProfileView initialProfile={coordinatorProfile} />
+          {isLoading && (
+            <p className="mb-4 text-sm text-muted-foreground">Memuat profil session...</p>
+          )}
+          {error && <p className="mb-4 text-sm text-amber-600">{error}</p>}
+          <UnifiedProfileView initialProfile={coordinatorProfile} onSave={saveProfile} />
         </div>
       </ContentWrapper>
     </RoleLayoutComponent>

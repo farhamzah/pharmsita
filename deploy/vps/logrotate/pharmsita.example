@@ -1,0 +1,27 @@
+/var/log/pharmsita/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    su pharmsita adm
+    copytruncate
+    create 0640 pharmsita adm
+}
+
+/var/log/nginx/pharmsita_*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 www-data adm
+    sharedscripts
+    postrotate
+        if [ -s /run/nginx.pid ]; then
+            kill -USR1 "$(cat /run/nginx.pid)"
+        fi
+    endscript
+}

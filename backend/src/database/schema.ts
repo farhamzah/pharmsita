@@ -1,11 +1,14 @@
 import type {
   AcademicPeriod,
+  AuditExportAttempt,
   AuditLog,
   ExamStage,
   ExamWorkflow,
   GuidanceStage,
   GuidanceWorkflow,
   FinalProjectRegistration,
+  GuidanceMaterial,
+  GuidanceRequest,
   RequirementDefinition,
   RequirementBundle,
   RevisionStage,
@@ -40,13 +43,31 @@ export interface StudentWorkflowState {
   revisions: Record<RevisionStage, RevisionWorkflow>;
 }
 
+export interface LecturerProfileState {
+  userId: string;
+  nidn?: string;
+  expertise?: string;
+  quotaLimit: number;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export type GuidanceRequestState = Omit<
+  GuidanceRequest,
+  "materialSummary" | "materials"
+>;
+
 export interface DatabaseState {
-  schemaVersion: 7;
+  schemaVersion: 9;
   users: UserRecord[];
   userRoles: UserRoleAssignment[];
+  lecturerProfiles: Record<string, LecturerProfileState>;
   refreshTokens: RefreshTokenRecord[];
   auditLogs: AuditLog[];
+  auditExportAttempts: AuditExportAttempt[];
   finalProjectRegistrations: FinalProjectRegistration[];
+  guidanceRequests: GuidanceRequestState[];
+  guidanceMaterials: GuidanceMaterial[];
   permissionsByRole: Record<UserRole, string[]>;
   masterData: MasterDataState;
   studentWorkflows: Record<string, StudentWorkflowState>;

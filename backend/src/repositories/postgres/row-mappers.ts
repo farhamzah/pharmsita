@@ -29,6 +29,25 @@ export interface UserRow {
   name: string;
   email: string | null;
   status: "Aktif" | "Nonaktif";
+  phone: string | null;
+  address: string | null;
+  gender: UserAccount["gender"] | null;
+  birth_date: Date | string | null;
+  nim?: string | null;
+  program_studi?: string | null;
+  angkatan?: string | null;
+  kelas?: string | null;
+  skema_ta?: UserAccount["skemaTA"] | null;
+  jenis_ta?: string | null;
+  nidn?: string | null;
+  expertise?: string | null;
+  jabatan_akademik?: string | null;
+  peran_sistem?: unknown;
+  jabatan?: string | null;
+  hak_akses_utama?: unknown;
+  divisi?: string | null;
+  tingkat_akses?: UserAccount["tingkatAkses"] | null;
+  cakupan_akses?: unknown;
   password_hash: string;
   password_status: UserAccount["passwordStatus"];
   force_change_on_login: boolean;
@@ -44,6 +63,25 @@ export const toUserRecord = (row: UserRow): UserRecord => ({
   name: row.name,
   email: row.email || undefined,
   status: row.status,
+  phone: row.phone || undefined,
+  address: row.address || undefined,
+  gender: row.gender || undefined,
+  birthDate: row.birth_date ? toDateOnly(row.birth_date) : undefined,
+  nim: row.nim || undefined,
+  programStudi: row.program_studi || undefined,
+  angkatan: row.angkatan || undefined,
+  kelas: row.kelas || undefined,
+  skemaTA: row.skema_ta || undefined,
+  jenisTA: row.jenis_ta || undefined,
+  nidn: row.nidn || undefined,
+  bidangKeahlian: toStringArray(row.expertise),
+  jabatanAkademik: row.jabatan_akademik || undefined,
+  peranSistem: toStringArray(row.peran_sistem),
+  jabatan: row.jabatan || undefined,
+  hakAksesUtama: toStringArray(row.hak_akses_utama),
+  divisi: row.divisi || undefined,
+  tingkatAkses: row.tingkat_akses || undefined,
+  cakupanAkses: toStringArray(row.cakupan_akses),
   passwordHash: row.password_hash,
   passwordStatus: row.password_status,
   forceChangeOnLogin: row.force_change_on_login,
@@ -295,7 +333,10 @@ export const toSupervisorAssignment = (
 
 const toDateOnly = (value: Date | string) => {
   if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
   return value.slice(0, 10);

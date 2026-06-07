@@ -2,6 +2,7 @@ export interface ApiErrorBody {
   error: {
     code: string;
     message: string;
+    requestId?: string;
     details?: unknown;
   };
 }
@@ -28,8 +29,15 @@ export const unauthenticated = (message = "Token tidak ada atau tidak valid.") =
 export const forbidden = (message = "Role tidak punya akses.") =>
   new HttpError(403, "FORBIDDEN", message);
 
-export const conflict = (message = "Resource bertabrakan dengan aturan workflow.") =>
-  new HttpError(409, "CONFLICT", message);
+export const tooManyRequests = (
+  message = "Terlalu banyak request dalam waktu singkat.",
+  details?: unknown
+) => new HttpError(429, "TOO_MANY_REQUESTS", message, details);
+
+export const conflict = (
+  message = "Resource bertabrakan dengan aturan workflow.",
+  details?: unknown
+) => new HttpError(409, "CONFLICT", message, details);
 
 export const notFound = (message = "Resource tidak ditemukan.") =>
   new HttpError(404, "NOT_FOUND", message);
@@ -37,10 +45,11 @@ export const notFound = (message = "Resource tidak ditemukan.") =>
 export const validationError = (message: string, details?: unknown) =>
   new HttpError(422, "VALIDATION_ERROR", message, details);
 
-export const toErrorBody = (error: HttpError): ApiErrorBody => ({
+export const toErrorBody = (error: HttpError, requestId?: string): ApiErrorBody => ({
   error: {
     code: error.code,
     message: error.message,
+    ...(requestId ? { requestId } : {}),
     ...(error.details === undefined ? {} : { details: error.details }),
   },
 });

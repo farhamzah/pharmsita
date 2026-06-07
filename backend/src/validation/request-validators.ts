@@ -4,7 +4,11 @@ import type {
   ExamResultStatus,
   ExamStatus,
   FinalProjectRegistrationStatus,
+  GuidanceMaterial,
+  GuidanceMaterialStatus,
+  GuidanceRequestStatus,
   GuidanceSessionStatus,
+  GuidanceType,
   RequirementDefinition,
   RequirementBundle,
   RequirementItem,
@@ -22,6 +26,8 @@ import { validationError } from "../http/errors";
 
 type Details = Record<string, string[]>;
 type UnknownRecord = Record<string, unknown>;
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const addError = (details: Details, path: string, message: string) => {
   details[path] ||= [];
@@ -60,6 +66,38 @@ const optionalString = (record: UnknownRecord, key: string) => {
 const optionalBoolean = (record: UnknownRecord, key: string, fallback = false) => {
   const value = record[key];
   return typeof value === "boolean" ? value : fallback;
+};
+
+const optionalTrimmedString = (record: UnknownRecord, keys: string[]) => {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string") {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+};
+
+const optionalStringArray = (record: UnknownRecord, keys: string[]) => {
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      return value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    if (typeof value === "string") {
+      return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+
+  return undefined;
 };
 
 const requiredBoolean = (
@@ -110,7 +148,8 @@ const requiredArray = (body: unknown, resourceName: string) => {
 };
 
 const normalizeRole = (value: string): UserRole | null => {
-  const normalized = value.toLowerCase();
+  const normalized = value.toLowerCase().trim();
+  const slug = normalized.replace(/[_\s]+/g, "-");
   const map: Record<string, UserRole> = {
     mahasiswa: "mahasiswa",
     dosen: "dosen",
@@ -120,7 +159,7 @@ const normalizeRole = (value: string): UserRole | null => {
     coordinator: "koordinator",
   };
 
-  return map[normalized] || null;
+  return map[normalized] || map[slug] || null;
 };
 
 const normalizeStatus = (value: string): UserStatus | null => {
@@ -190,6 +229,262 @@ export const validateFirstLoginRequest = (body: unknown) => {
   return { loginChallengeId, role: role || "mahasiswa", newPassword };
 };
 
+export const validateProfileUpdate = (body: unknown) => {
+  const details: Details = {};
+  const record = ensureRecord(body, "body", details);
+  const name = optionalTrimmedString(record, ["name", "nama"]);
+  const email = optionalTrimmedString(record, ["email"]);
+  const phone = optionalTrimmedString(record, ["phone", "telepon", "noHpWhatsapp"]);
+  const address = optionalTrimmedString(record, ["address", "alamat"]);
+  const gender = optionalTrimmedString(record, ["gender", "jenisKelamin"]);
+  const birthDate = optionalTrimmedString(record, ["birthDate", "tanggalLahir"]);
+  const nim = optionalTrimmedString(record, ["nim"]);
+  const programStudi = optionalTrimmedString(record, ["programStudi"]);
+  const angkatan = optionalTrimmedString(record, ["angkatan"]);
+  const kelas = optionalTrimmedString(record, ["kelas"]);
+  const skemaTA = optionalTrimmedString(record, ["skemaTA"]);
+  const jenisTA = optionalTrimmedString(record, ["jenisTA"]);
+  const nidn = optionalTrimmedString(record, ["nidn"]);
+  const bidangKeahlian = optionalStringArray(record, ["bidangKeahlian", "expertise"]);
+  const jabatanAkademik = optionalTrimmedString(record, ["jabatanAkademik"]);
+  const peranSistem = optionalStringArray(record, ["peranSistem"]);
+  const jabatan = optionalTrimmedString(record, ["jabatan"]);
+  const hakAksesUtama = optionalStringArray(record, ["hakAksesUtama"]);
+  const divisi = optionalTrimmedString(record, ["divisi"]);
+  const tingkatAkses = optionalTrimmedString(record, ["tingkatAkses"]);
+  const cakupanAkses = optionalStringArray(record, ["cakupanAkses"]);
+
+  if (name !== undefined && name.length < 2) {
+    addError(details, "body.name", "Nama minimal 2 karakter.");
+  }
+
+  if (email !== undefined && email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    addError(details, "body.email", "Format email tidak valid.");
+  }
+
+  if (gender !== undefined && gender && !["Laki-laki", "Perempuan"].includes(gender)) {
+    addError(details, "body.gender", "Jenis kelamin harus Laki-laki atau Perempuan.");
+  }
+
+  if (birthDate !== undefined && birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+    addError(details, "body.birthDate", "Tanggal lahir harus format YYYY-MM-DD.");
+  }
+
+  if (skemaTA !== undefined && skemaTA && !["Skripsi", "Non Skripsi"].includes(skemaTA)) {
+    addError(details, "body.skemaTA", "Skema TA harus Skripsi atau Non Skripsi.");
+  }
+
+  if (tingkatAkses !== undefined && tingkatAkses && !["Superadmin", "Admin Prodi"].includes(tingkatAkses)) {
+    addError(details, "body.tingkatAkses", "Tingkat akses harus Superadmin atau Admin Prodi.");
+  }
+
+  assertNoErrors(details);
+  return {
+    name: name || undefined,
+    email: email || undefined,
+    phone: phone || undefined,
+    address: address || undefined,
+    gender: (gender || undefined) as UserAccount["gender"],
+    birthDate: birthDate || undefined,
+    nim: nim || undefined,
+    programStudi: programStudi || undefined,
+    angkatan: angkatan || undefined,
+    kelas: kelas || undefined,
+    skemaTA: (skemaTA || undefined) as UserAccount["skemaTA"],
+    jenisTA: jenisTA || undefined,
+    nidn: nidn || undefined,
+    bidangKeahlian,
+    jabatanAkademik: jabatanAkademik || undefined,
+    peranSistem,
+    jabatan: jabatan || undefined,
+    hakAksesUtama,
+    divisi: divisi || undefined,
+    tingkatAkses: (tingkatAkses || undefined) as UserAccount["tingkatAkses"],
+    cakupanAkses,
+  };
+};
+
+const readAdminProfileFields = (
+  record: UnknownRecord,
+  details: Details,
+  path: string
+) => {
+  const phone = optionalTrimmedString(record, ["phone", "telepon", "noHpWhatsapp"]);
+  const address = optionalTrimmedString(record, ["address", "alamat"]);
+  const gender = optionalTrimmedString(record, ["gender", "jenisKelamin"]);
+  const birthDate = optionalTrimmedString(record, ["birthDate", "tanggalLahir"]);
+  const nim = optionalTrimmedString(record, ["nim"]);
+  const programStudi = optionalTrimmedString(record, ["programStudi"]);
+  const angkatan = optionalTrimmedString(record, ["angkatan"]);
+  const kelas = optionalTrimmedString(record, ["kelas"]);
+  const skemaTA = optionalTrimmedString(record, ["skemaTA"]);
+  const jenisTA = optionalTrimmedString(record, ["jenisTA"]);
+  const nidn = optionalTrimmedString(record, ["nidn"]);
+  const bidangKeahlian = optionalStringArray(record, ["bidangKeahlian", "expertise"]);
+  const jabatanAkademik = optionalTrimmedString(record, ["jabatanAkademik"]);
+  const peranSistem = optionalStringArray(record, ["peranSistem"]);
+  const jabatan = optionalTrimmedString(record, ["jabatan"]);
+  const hakAksesUtama = optionalStringArray(record, ["hakAksesUtama"]);
+  const divisi = optionalTrimmedString(record, ["divisi"]);
+  const tingkatAkses = optionalTrimmedString(record, ["tingkatAkses"]);
+  const cakupanAkses = optionalStringArray(record, ["cakupanAkses"]);
+
+  if (gender !== undefined && gender && !["Laki-laki", "Perempuan"].includes(gender)) {
+    addError(details, `${path}.gender`, "Jenis kelamin harus Laki-laki atau Perempuan.");
+  }
+
+  if (birthDate !== undefined && birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+    addError(details, `${path}.birthDate`, "Tanggal lahir harus format YYYY-MM-DD.");
+  }
+
+  if (skemaTA !== undefined && skemaTA && !["Skripsi", "Non Skripsi"].includes(skemaTA)) {
+    addError(details, `${path}.skemaTA`, "Skema TA harus Skripsi atau Non Skripsi.");
+  }
+
+  if (tingkatAkses !== undefined && tingkatAkses && !["Superadmin", "Admin Prodi"].includes(tingkatAkses)) {
+    addError(details, `${path}.tingkatAkses`, "Tingkat akses harus Superadmin atau Admin Prodi.");
+  }
+
+  return {
+    phone: phone || undefined,
+    address: address || undefined,
+    gender: (gender || undefined) as UserAccount["gender"],
+    birthDate: birthDate || undefined,
+    nim: nim || undefined,
+    programStudi: programStudi || undefined,
+    angkatan: angkatan || undefined,
+    kelas: kelas || undefined,
+    skemaTA: (skemaTA || undefined) as UserAccount["skemaTA"],
+    jenisTA: jenisTA || undefined,
+    nidn: nidn || undefined,
+    bidangKeahlian,
+    jabatanAkademik: jabatanAkademik || undefined,
+    peranSistem,
+    jabatan: jabatan || undefined,
+    hakAksesUtama,
+    divisi: divisi || undefined,
+    tingkatAkses: (tingkatAkses || undefined) as UserAccount["tingkatAkses"],
+    cakupanAkses,
+  };
+};
+
+export const validateAdminUserCreate = (body: unknown) => {
+  const details: Details = {};
+  const record = ensureRecord(body, "body", details);
+  const name = requiredString(record, "name", "body", details);
+  const identifier = requiredString(record, "identifier", "body", details);
+  const roleRaw = requiredString(record, "role", "body", details);
+  const statusRaw = optionalString(record, "status") || "Aktif";
+  const email = optionalTrimmedString(record, ["email"]);
+  const password = optionalString(record, "password");
+  const role = normalizeRole(roleRaw);
+  const status = normalizeStatus(statusRaw);
+  const profile = readAdminProfileFields(record, details, "body");
+
+  if (name.length < 2) {
+    addError(details, "body.name", "Nama minimal 2 karakter.");
+  }
+
+  if (!role) {
+    addError(details, "body.role", "Role tidak dikenal.");
+  }
+
+  if (!status) {
+    addError(details, "body.status", "Status harus Aktif atau Nonaktif.");
+  }
+
+  if (email !== undefined && email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    addError(details, "body.email", "Format email tidak valid.");
+  }
+
+  if (password && password.length < 8) {
+    addError(details, "body.password", "Password awal minimal 8 karakter.");
+  }
+
+  assertNoErrors(details);
+  return {
+    name,
+    identifier,
+    role: role || "mahasiswa",
+    status: status || "Aktif",
+    email: email || undefined,
+    password,
+    ...profile,
+  };
+};
+
+export const validateAdminUserUpdate = (body: unknown) => {
+  const details: Details = {};
+  const record = ensureRecord(body, "body", details);
+  const name = optionalTrimmedString(record, ["name"]);
+  const identifier = optionalTrimmedString(record, ["identifier"]);
+  const roleRaw = optionalTrimmedString(record, ["role"]);
+  const statusRaw = optionalTrimmedString(record, ["status"]);
+  const email = optionalTrimmedString(record, ["email"]);
+  const password = optionalString(record, "password");
+  const role = roleRaw ? normalizeRole(roleRaw) : undefined;
+  const status = statusRaw ? normalizeStatus(statusRaw) : undefined;
+  const profile = readAdminProfileFields(record, details, "body");
+
+  if (name !== undefined && name.length < 2) {
+    addError(details, "body.name", "Nama minimal 2 karakter.");
+  }
+
+  if (roleRaw && !role) {
+    addError(details, "body.role", "Role tidak dikenal.");
+  }
+
+  if (statusRaw && !status) {
+    addError(details, "body.status", "Status harus Aktif atau Nonaktif.");
+  }
+
+  if (email !== undefined && email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    addError(details, "body.email", "Format email tidak valid.");
+  }
+
+  if (password && password.length < 8) {
+    addError(details, "body.password", "Password reset minimal 8 karakter.");
+  }
+
+  assertNoErrors(details);
+  return {
+    name,
+    identifier,
+    role: role || undefined,
+    status: status || undefined,
+    email,
+    password,
+    ...profile,
+  };
+};
+
+export const validateAdminUserStatusUpdate = (body: unknown) => {
+  const details: Details = {};
+  const record = ensureRecord(body, "body", details);
+  const statusRaw = requiredString(record, "status", "body", details);
+  const status = normalizeStatus(statusRaw);
+
+  if (!status) {
+    addError(details, "body.status", "Status harus Aktif atau Nonaktif.");
+  }
+
+  assertNoErrors(details);
+  return { status: status || "Aktif" };
+};
+
+export const validateAdminUserPasswordReset = (body: unknown) => {
+  const details: Details = {};
+  const record = ensureRecord(body, "body", details);
+  const password = requiredString(record, "password", "body", details);
+
+  if (password.length < 8) {
+    addError(details, "body.password", "Password reset minimal 8 karakter.");
+  }
+
+  assertNoErrors(details);
+  return { password };
+};
+
 export const validateUserAccounts = (body: unknown): UserAccount[] => {
   const details: Details = {};
   const records = requiredArray(body, "Daftar user");
@@ -213,6 +508,21 @@ export const validateUserAccounts = (body: unknown): UserAccount[] => {
       addError(details, `${path}.status`, "Status harus Aktif atau Nonaktif.");
     }
 
+    const password = optionalString(record, "password");
+    const passwordStatusRaw = optionalString(record, "passwordStatus");
+    const passwordStatus =
+      passwordStatusRaw === "needs_activation" ||
+      passwordStatusRaw === "reset_requested" ||
+      passwordStatusRaw === "active"
+        ? passwordStatusRaw
+        : password
+          ? "needs_activation"
+          : "active";
+
+    if (password && password.length < 8) {
+      addError(details, `${path}.password`, "Password awal/reset minimal 8 karakter.");
+    }
+
     const { password: _password, passwordHash: _passwordHash, ...safeRecord } = record;
 
     return {
@@ -223,10 +533,18 @@ export const validateUserAccounts = (body: unknown): UserAccount[] => {
       role: role || "mahasiswa",
       status: status || "Aktif",
       email: optionalString(record, "email"),
-      passwordStatus:
-        optionalString(record, "passwordStatus") || "active",
-      forceChangeOnLogin: optionalBoolean(record, "forceChangeOnLogin", false),
+      ...(password ? { password } : {}),
+      passwordStatus,
+      forceChangeOnLogin: password
+        ? true
+        : optionalBoolean(record, "forceChangeOnLogin", false),
       lastLoginAt: optionalString(record, "lastLoginAt") || null,
+      firstLoginCompletedAt: password
+        ? null
+        : optionalString(record, "firstLoginCompletedAt") || null,
+      passwordChangedAt: password
+        ? null
+        : optionalString(record, "passwordChangedAt") || null,
     } as UserAccount;
   });
 
@@ -538,6 +856,56 @@ export const validateFinalProjectRegistrationValidation = (body: unknown) => {
   };
 };
 
+export const validateSupervisorAssignmentUpdate = (body: unknown) => {
+  const details: Details = {};
+  const record = ensureRecord(body, "body", details);
+  const pembimbing1Id = optionalString(record, "pembimbing1Id");
+  const pembimbing2Id = optionalString(record, "pembimbing2Id");
+  const coordinatorNote =
+    optionalString(record, "coordinatorNote") ||
+    optionalString(record, "catatanKoordinator");
+
+  if (!pembimbing1Id) {
+    addError(details, "body.pembimbing1Id", "Pembimbing 1 wajib diisi.");
+  }
+
+  if (!pembimbing2Id) {
+    addError(details, "body.pembimbing2Id", "Pembimbing 2 wajib diisi.");
+  }
+
+  if (pembimbing1Id && pembimbing2Id && pembimbing1Id === pembimbing2Id) {
+    addError(details, "body.pembimbing2Id", "Pembimbing 1 dan 2 tidak boleh sama.");
+  }
+
+  assertNoErrors(details);
+  return {
+    pembimbing1Id: pembimbing1Id || "",
+    pembimbing2Id: pembimbing2Id || "",
+    coordinatorNote,
+  };
+};
+
+export const validateLecturerQuotaUpdate = (body: unknown) => {
+  const details: Details = {};
+  const record = ensureRecord(body, "body", details);
+  const rawQuota = record.quotaLimit ?? record.kuotaMaksimal;
+  const quotaLimit =
+    typeof rawQuota === "number" && Number.isFinite(rawQuota)
+      ? rawQuota
+      : typeof rawQuota === "string" && rawQuota.trim() !== ""
+        ? Number(rawQuota)
+        : Number.NaN;
+
+  if (!Number.isInteger(quotaLimit)) {
+    addError(details, "body.quotaLimit", "Kuota harus berupa bilangan bulat.");
+  } else if (quotaLimit < 0) {
+    addError(details, "body.quotaLimit", "Kuota tidak boleh negatif.");
+  }
+
+  assertNoErrors(details);
+  return { quotaLimit };
+};
+
 export const validateDocsLink = (body: unknown, fieldName = "link") => {
   const details: Details = {};
   const record = ensureRecord(body, "body", details);
@@ -604,6 +972,146 @@ export const validateGuidanceRequest = (body: unknown) => {
   const note = typeof record.note === "string" ? record.note : "";
   assertNoErrors(details);
   return { note };
+};
+
+export const validateGuidanceRequestSubmission = (body: unknown) => {
+  const details: Details = {};
+  const record = ensureRecord(body, "body", details);
+  const guidanceTypes = [
+    "seminar-proposal",
+    "sidang-akhir",
+    "revisi-seminar-proposal",
+    "revisi-sidang-akhir",
+  ] as const;
+  const guidanceType = readEnum(
+    record,
+    "guidanceType",
+    guidanceTypes,
+    "body",
+    details
+  ) as GuidanceType;
+  const googleDocsLink =
+    typeof record.googleDocsLink === "string" && record.googleDocsLink.trim() !== ""
+      ? record.googleDocsLink.trim()
+      : typeof record.link === "string" && record.link.trim() !== ""
+        ? record.link.trim()
+        : "";
+  const studentNote =
+    optionalString(record, "studentNote") ||
+    optionalString(record, "note") ||
+    optionalString(record, "catatanMahasiswa");
+
+  if (!googleDocsLink) {
+    addError(details, "body.googleDocsLink", "Link Google Docs wajib diisi.");
+  }
+
+  assertNoErrors(details);
+  return { guidanceType, googleDocsLink, studentNote };
+};
+
+export const validateGuidanceRequestValidation = (body: unknown) => {
+  const details: Details = {};
+  const record = ensureRecord(body, "body", details);
+  const statuses = ["Disetujui", "Ditolak"] as const;
+  const status = readEnum(
+    record,
+    "status",
+    statuses,
+    "body",
+    details
+  ) as Extract<GuidanceRequestStatus, "Disetujui" | "Ditolak">;
+  const lecturerNote =
+    optionalString(record, "lecturerNote") ||
+    optionalString(record, "catatanDosen") ||
+    optionalString(record, "approvalNote");
+
+  if (status === "Ditolak" && !lecturerNote) {
+    addError(details, "body.catatanDosen", "Catatan wajib diisi saat ditolak.");
+  }
+
+  assertNoErrors(details);
+  return { status, lecturerNote };
+};
+
+export const validateGuidanceMaterialSubmission = (
+  body: unknown,
+  sourceRevisionItemId?: string | null
+) => {
+  const details: Details = {};
+  const record = ensureRecord(body, "body", details);
+  const materialTypes = ["normal", "revision"] as const;
+  const materialType = (
+    sourceRevisionItemId
+      ? "revision"
+      : typeof record.materialType === "string"
+        ? readEnum(record, "materialType", materialTypes, "body", details)
+        : "normal"
+  ) as GuidanceMaterial["materialType"];
+  const resolvedSourceRevisionItemId =
+    sourceRevisionItemId ||
+    optionalString(record, "sourceRevisionItemId") ||
+    null;
+  const topic =
+    optionalString(record, "topic") ||
+    optionalString(record, "title") ||
+    optionalString(record, "topik") ||
+    "";
+  const content =
+    optionalString(record, "content") ||
+    optionalString(record, "materi") ||
+    optionalString(record, "penyelesaian");
+
+  if (materialType === "normal" && !topic) {
+    addError(details, "body.topic", "Topik materi wajib diisi.");
+  }
+
+  if (materialType === "revision" && !resolvedSourceRevisionItemId) {
+    addError(details, "body.sourceRevisionItemId", "Item revisi wajib diisi.");
+  }
+
+  if (
+    materialType === "revision" &&
+    resolvedSourceRevisionItemId &&
+    !uuidPattern.test(resolvedSourceRevisionItemId)
+  ) {
+    addError(details, "body.sourceRevisionItemId", "Item revisi harus berupa UUID.");
+  }
+
+  assertNoErrors(details);
+  return {
+    materialType,
+    sourceRevisionItemId: resolvedSourceRevisionItemId,
+    topic:
+      topic ||
+      (resolvedSourceRevisionItemId
+        ? `Materi revisi ${resolvedSourceRevisionItemId}`
+        : "Materi bimbingan"),
+    content,
+  };
+};
+
+export const validateGuidanceMaterialValidation = (body: unknown) => {
+  const details: Details = {};
+  const record = ensureRecord(body, "body", details);
+  const statuses = ["Valid", "Ditolak"] as const;
+  const status = readEnum(
+    record,
+    "status",
+    statuses,
+    "body",
+    details
+  ) as Extract<GuidanceMaterialStatus, "Valid" | "Ditolak">;
+  const lecturerNote =
+    optionalString(record, "lecturerNote") ||
+    optionalString(record, "catatanDosen") ||
+    optionalString(record, "catatan");
+
+  if (status === "Ditolak" && !lecturerNote) {
+    addError(details, "body.catatanDosen", "Catatan wajib diisi saat ditolak.");
+  }
+
+  assertNoErrors(details);
+  return { status, lecturerNote };
 };
 
 export const validateGuidanceRequestApproval = (body: unknown) => {

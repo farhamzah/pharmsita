@@ -23,7 +23,7 @@ import type {
 
 interface UnifiedProfileViewProps {
   initialProfile: BaseProfile;
-  onSave?: (updatedProfile: any) => void;
+  onSave?: (updatedProfile: any) => void | Promise<any>;
   canEdit?: boolean;
 }
 
@@ -34,6 +34,7 @@ export const UnifiedProfileView: React.FC<UnifiedProfileViewProps> = ({
 }) => {
   const [profile, setProfile] = useState<any>(initialProfile);
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [showNotification, setShowNotification] = useState<string | null>(null);
 
   // Editable fields state
@@ -42,12 +43,82 @@ export const UnifiedProfileView: React.FC<UnifiedProfileViewProps> = ({
   const [alamat, setAlamat] = useState(profile.alamat || "");
   const [gender, setGender] = useState(profile.gender || "Laki-laki");
   const [tanggalLahir, setTanggalLahir] = useState(profile.tanggalLahir || "");
+  const [programStudi, setProgramStudi] = useState(profile.programStudi || "");
+  const [angkatan, setAngkatan] = useState(profile.angkatan || "");
+  const [kelas, setKelas] = useState(profile.kelas || "");
+  const [skemaTA, setSkemaTA] = useState(profile.skemaTA || "Skripsi");
+  const [jenisTA, setJenisTA] = useState(profile.jenisTA || "");
+  const [nidn, setNidn] = useState(profile.nidn || "");
+  const [bidangKeahlianText, setBidangKeahlianText] = useState(
+    Array.isArray(profile.bidangKeahlian)
+      ? profile.bidangKeahlian.join(", ")
+      : profile.bidangKeahlian || ""
+  );
+  const [jabatanAkademik, setJabatanAkademik] = useState(profile.jabatanAkademik || "");
+  const [peranSistemText, setPeranSistemText] = useState(
+    Array.isArray(profile.peranSistem)
+      ? profile.peranSistem.join(", ")
+      : profile.peranSistem || ""
+  );
+  const [jabatan, setJabatan] = useState(profile.jabatan || "");
+  const [hakAksesUtamaText, setHakAksesUtamaText] = useState(
+    Array.isArray(profile.hakAksesUtama)
+      ? profile.hakAksesUtama.join(", ")
+      : profile.hakAksesUtama || ""
+  );
+  const [divisi, setDivisi] = useState(profile.divisi || "");
+  const [tingkatAkses, setTingkatAkses] = useState(profile.tingkatAkses || "Admin Prodi");
+  const [cakupanAksesText, setCakupanAksesText] = useState(
+    Array.isArray(profile.cakupanAkses)
+      ? profile.cakupanAkses.join(", ")
+      : profile.cakupanAkses || ""
+  );
 
   // Password change state
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
+  React.useEffect(() => {
+    setProfile(initialProfile);
+    setEmail(initialProfile.email);
+    setPhone(initialProfile.phone);
+    setAlamat(initialProfile.alamat || "");
+    setGender(initialProfile.gender || "Laki-laki");
+    setTanggalLahir(initialProfile.tanggalLahir || "");
+    setProgramStudi((initialProfile as any).programStudi || "");
+    setAngkatan((initialProfile as any).angkatan || "");
+    setKelas((initialProfile as any).kelas || "");
+    setSkemaTA((initialProfile as any).skemaTA || "Skripsi");
+    setJenisTA((initialProfile as any).jenisTA || "");
+    setNidn((initialProfile as any).nidn || "");
+    setBidangKeahlianText(
+      Array.isArray((initialProfile as any).bidangKeahlian)
+        ? (initialProfile as any).bidangKeahlian.join(", ")
+        : (initialProfile as any).bidangKeahlian || ""
+    );
+    setJabatanAkademik((initialProfile as any).jabatanAkademik || "");
+    setPeranSistemText(
+      Array.isArray((initialProfile as any).peranSistem)
+        ? (initialProfile as any).peranSistem.join(", ")
+        : (initialProfile as any).peranSistem || ""
+    );
+    setJabatan((initialProfile as any).jabatan || "");
+    setHakAksesUtamaText(
+      Array.isArray((initialProfile as any).hakAksesUtama)
+        ? (initialProfile as any).hakAksesUtama.join(", ")
+        : (initialProfile as any).hakAksesUtama || ""
+    );
+    setDivisi((initialProfile as any).divisi || "");
+    setTingkatAkses((initialProfile as any).tingkatAkses || "Admin Prodi");
+    setCakupanAksesText(
+      Array.isArray((initialProfile as any).cakupanAkses)
+        ? (initialProfile as any).cakupanAkses.join(", ")
+        : (initialProfile as any).cakupanAkses || ""
+    );
+    setIsEditing(false);
+  }, [initialProfile]);
 
   // Cast profiles for role-specific renders
   const student = profile.role === Roles.STUDENT ? (profile as StudentProfile) : null;
@@ -62,8 +133,9 @@ export const UnifiedProfileView: React.FC<UnifiedProfileViewProps> = ({
     }, 4000);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
     
     const updated = {
       ...profile,
@@ -71,15 +143,33 @@ export const UnifiedProfileView: React.FC<UnifiedProfileViewProps> = ({
       phone,
       alamat,
       gender,
-      tanggalLahir
+      tanggalLahir,
+      programStudi,
+      angkatan,
+      kelas,
+      skemaTA,
+      jenisTA,
+      nidn,
+      bidangKeahlian: bidangKeahlianText.split(",").map((item: string) => item.trim()).filter(Boolean),
+      jabatanAkademik,
+      peranSistem: peranSistemText.split(",").map((item: string) => item.trim()).filter(Boolean),
+      jabatan,
+      hakAksesUtama: hakAksesUtamaText.split(",").map((item: string) => item.trim()).filter(Boolean),
+      divisi,
+      tingkatAkses,
+      cakupanAkses: cakupanAksesText.split(",").map((item: string) => item.trim()).filter(Boolean)
     };
 
-    setProfile(updated);
-    setIsEditing(false);
-    if (onSave) {
-      onSave(updated);
+    try {
+      const saved = onSave ? await onSave(updated) : updated;
+      setProfile(saved || updated);
+      setIsEditing(false);
+      triggerToast("Profil Anda berhasil diperbarui secara aman!");
+    } catch {
+      triggerToast("Profil belum bisa disimpan. Periksa koneksi backend lalu coba lagi.");
+    } finally {
+      setIsSaving(false);
     }
-    triggerToast("Profil Anda berhasil diperbarui secara aman!");
   };
 
   const handleChangePasswordSubmit = (e: React.FormEvent) => {
@@ -115,6 +205,20 @@ export const UnifiedProfileView: React.FC<UnifiedProfileViewProps> = ({
     setAlamat(profile.alamat || "");
     setGender(profile.gender || "Laki-laki");
     setTanggalLahir(profile.tanggalLahir || "");
+    setProgramStudi(profile.programStudi || "");
+    setAngkatan(profile.angkatan || "");
+    setKelas(profile.kelas || "");
+    setSkemaTA(profile.skemaTA || "Skripsi");
+    setJenisTA(profile.jenisTA || "");
+    setNidn(profile.nidn || "");
+    setBidangKeahlianText(Array.isArray(profile.bidangKeahlian) ? profile.bidangKeahlian.join(", ") : profile.bidangKeahlian || "");
+    setJabatanAkademik(profile.jabatanAkademik || "");
+    setPeranSistemText(Array.isArray(profile.peranSistem) ? profile.peranSistem.join(", ") : profile.peranSistem || "");
+    setJabatan(profile.jabatan || "");
+    setHakAksesUtamaText(Array.isArray(profile.hakAksesUtama) ? profile.hakAksesUtama.join(", ") : profile.hakAksesUtama || "");
+    setDivisi(profile.divisi || "");
+    setTingkatAkses(profile.tingkatAkses || "Admin Prodi");
+    setCakupanAksesText(Array.isArray(profile.cakupanAkses) ? profile.cakupanAkses.join(", ") : profile.cakupanAkses || "");
     setIsEditing(false);
   };
 
@@ -357,6 +461,92 @@ export const UnifiedProfileView: React.FC<UnifiedProfileViewProps> = ({
                   />
                 </div>
 
+                {student && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-border/60 pt-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Program Studi</label>
+                      <input value={programStudi} onChange={(e) => setProgramStudi(e.target.value)} className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Angkatan</label>
+                      <input value={angkatan} onChange={(e) => setAngkatan(e.target.value)} className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Kelas</label>
+                      <input value={kelas} onChange={(e) => setKelas(e.target.value)} className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Skema TA</label>
+                      <select value={skemaTA} onChange={(e) => setSkemaTA(e.target.value)} className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition">
+                        <option value="Skripsi">Skripsi</option>
+                        <option value="Non Skripsi">Non Skripsi</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Jenis TA</label>
+                      <input value={jenisTA} onChange={(e) => setJenisTA(e.target.value)} placeholder="Penelitian, MBKM, Publikasi Ilmiah..." className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                  </div>
+                )}
+
+                {lecturer && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-border/60 pt-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">NIDN / NIP</label>
+                      <input value={nidn} onChange={(e) => setNidn(e.target.value)} className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Jabatan Akademik</label>
+                      <input value={jabatanAkademik} onChange={(e) => setJabatanAkademik(e.target.value)} className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Bidang Keahlian</label>
+                      <input value={bidangKeahlianText} onChange={(e) => setBidangKeahlianText(e.target.value)} placeholder="Pisahkan dengan koma" className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Peran Sistem</label>
+                      <input value={peranSistemText} onChange={(e) => setPeranSistemText(e.target.value)} placeholder="Pembimbing, Penguji, Ketua Sidang" className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                  </div>
+                )}
+
+                {coordinator && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-border/60 pt-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Jabatan</label>
+                      <input value={jabatan} onChange={(e) => setJabatan(e.target.value)} className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Program Studi</label>
+                      <input value={programStudi} onChange={(e) => setProgramStudi(e.target.value)} className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Hak Akses Utama</label>
+                      <input value={hakAksesUtamaText} onChange={(e) => setHakAksesUtamaText(e.target.value)} placeholder="Pisahkan dengan koma" className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                  </div>
+                )}
+
+                {admin && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-border/60 pt-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Divisi</label>
+                      <input value={divisi} onChange={(e) => setDivisi(e.target.value)} className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Tingkat Akses</label>
+                      <select value={tingkatAkses} onChange={(e) => setTingkatAkses(e.target.value)} className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition">
+                        <option value="Admin Prodi">Admin Prodi</option>
+                        <option value="Superadmin">Superadmin</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Cakupan Akses</label>
+                      <input value={cakupanAksesText} onChange={(e) => setCakupanAksesText(e.target.value)} placeholder="Pisahkan dengan koma" className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition" />
+                    </div>
+                  </div>
+                )}
+
                 {/* Form Buttons */}
                 <div className="pt-4 border-t border-border/60 flex justify-end gap-3">
                   <button
@@ -368,9 +558,10 @@ export const UnifiedProfileView: React.FC<UnifiedProfileViewProps> = ({
                   </button>
                   <button
                     type="submit"
+                    disabled={isSaving}
                     className="px-5 py-2 bg-primary text-primary-foreground hover:opacity-90 font-bold rounded-xl text-xs transition"
                   >
-                    Simpan Perubahan
+                    {isSaving ? "Menyimpan..." : "Simpan Perubahan"}
                   </button>
                 </div>
               </form>

@@ -2,6 +2,7 @@ import type { PostgresConnectionPool } from "../../database/postgres/connection"
 import type { RepositoryRegistry } from "../contracts";
 import { PostgresAuditLogRepository } from "./postgres-audit-log-repository";
 import { PostgresFinalProjectRegistrationRepository } from "./postgres-final-project-registration-repository";
+import { PostgresGuidanceRequestRepository } from "./postgres-guidance-request-repository";
 import { PostgresMasterDataRepository } from "./postgres-master-data-repository";
 import { PostgresRefreshTokenRepository } from "./postgres-refresh-token-repository";
 import { PostgresStudentWorkflowRepository } from "./postgres-student-workflow-repository";
@@ -18,5 +19,6 @@ export const createPostgresRepositories = (
     studentWorkflowRepository: new PostgresStudentWorkflowRepository(pool),
     finalProjectRegistrationRepository:
       new PostgresFinalProjectRegistrationRepository(pool),
+    guidanceRequestRepository: new PostgresGuidanceRequestRepository(pool),
   };
 };

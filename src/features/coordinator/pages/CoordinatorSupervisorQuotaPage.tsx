@@ -4,6 +4,11 @@ import { getCurrentRolePath } from '../../../lib/getCurrentRolePath';
 import ContentWrapper from '../../../components/ContentWrapper';
 import { SectionCard } from '../../../components/ui/SectionCard';
 import DataTable from '../../../components/ui/DataTable';
+import {
+  coordinatorWorkflowApi,
+  type LecturerDirectoryItem,
+  type StudentDirectoryItem,
+} from '../../../core/api/domain';
 import { X, Edit, User, Users, CheckCircle2, Search } from 'lucide-react';
 
 interface DosenSupervisorData {
@@ -99,6 +104,10 @@ interface StudentSupervisorData {
   stage: string;
   p1Id: string;
   p2Id: string;
+  p1Name?: string;
+  p2Name?: string;
+  activeStepId?: string | null;
+  isCompleted?: boolean;
 }
 
 const INITIAL_STUDENT_LIST: StudentSupervisorData[] = [
@@ -183,9 +192,9 @@ const getGuidedStudents = (
 ): MappedStudent[] => {
   return students
     .filter(s => {
-      if (filterType === 'p1') return s.p1Id === lecturerId && s.stage !== 'Selesai';
-      if (filterType === 'p2') return s.p2Id === lecturerId && s.stage !== 'Selesai';
-      return (s.p1Id === lecturerId || s.p2Id === lecturerId) && s.stage === 'Selesai';
+      if (filterType === 'p1') return s.p1Id === lecturerId && !s.isCompleted && s.stage !== 'Selesai';
+      if (filterType === 'p2') return s.p2Id === lecturerId && !s.isCompleted && s.stage !== 'Selesai';
+      return (s.p1Id === lecturerId || s.p2Id === lecturerId) && (!!s.isCompleted || s.stage === 'Selesai');
     })
     .map(s => ({
       id: `g-${s.id}`,
@@ -197,9 +206,43 @@ const getGuidedStudents = (
     }));
 };
 
+const mapDirectoryStudent = (student: StudentDirectoryItem): StudentSupervisorData => ({
+  id: student.id,
+  name: student.name,
+  nim: student.nim || student.identifier,
+  title: student.thesisTitle || "Tugas Akhir belum diajukan",
+  stage: student.activeStepLabel,
+  p1Id: student.supervisor1Id || "",
+  p2Id: student.supervisor2Id || "",
+  p1Name: student.supervisor1Name,
+  p2Name: student.supervisor2Name,
+  activeStepId: student.isCompleted ? "selesai" : student.activeStepId || "pendaftaran-ta",
+  isCompleted: student.isCompleted,
+});
+
+const mapDirectoryLecturer = (lecturer: LecturerDirectoryItem): DosenSupervisorData => ({
+  id: lecturer.id,
+  name: lecturer.name,
+  nip: lecturer.nidn || lecturer.identifier,
+  programStudi: lecturer.programStudi || "S1 Farmasi",
+  jabatan: lecturer.jabatan || lecturer.expertise || "Dosen Pembimbing",
+  p1Max: lecturer.quotaLimit || 0,
+  p1Active: lecturer.p1Active,
+  p2Max: lecturer.quotaLimit || 0,
+  p2Active: lecturer.p2Active,
+  completedCount: lecturer.completedCount,
+});
+
 export const CoordinatorSupervisorQuotaPage: React.FC = () => {
   const [dosenList, setDosenList] = useState<DosenSupervisorData[]>(INITIAL_DOSEN_LIST);
   const [studentsList, setStudentsList] = useState<StudentSupervisorData[]>(INITIAL_STUDENT_LIST);
+  const [isLoadingStudents, setIsLoadingStudents] = useState<boolean>(true);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [assignmentToast, setAssignmentToast] = useState<string | null>(null);
+  const [isSavingAssignment, setIsSavingAssignment] = useState<boolean>(false);
+  const [quotaError, setQuotaError] = useState<string | null>(null);
+  const [isSavingQuota, setIsSavingQuota] = useState<boolean>(false);
   
   // View states
   const [activeMainTab, setActiveMainTab] = useState<'kuota' | 'pembimbing'>('kuota');
@@ -210,7 +253,6 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
   const [isEditingQuota, setIsEditingQuota] = useState<boolean>(false);
   const [currentEditDosen, setCurrentEditDosen] = useState<DosenSupervisorData | null>(null);
   const [quotaP1Input, setQuotaP1Input] = useState<number>(8);
-  const [quotaP2Input, setQuotaP2Input] = useState<number>(8);
 
   // Edit Pembimbing Modal State
   const [isEditingPembimbing, setIsEditingPembimbing] = useState<boolean>(false);
@@ -223,10 +265,44 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchDosenQuery, setSearchDosenQuery] = useState<string>('');
 
+  const refreshDirectories = React.useCallback(async () => {
+    const [studentsResponse, lecturersResponse] = await Promise.all([
+      coordinatorWorkflowApi.listStudents(),
+      coordinatorWorkflowApi.listLecturers(),
+    ]);
+
+    setStudentsList(studentsResponse.data.map(mapDirectoryStudent));
+    setDosenList(lecturersResponse.data.map(mapDirectoryLecturer));
+    setDirectoryError(null);
+  }, []);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    refreshDirectories()
+      .catch(() => {
+        if (!mounted) return;
+        setDirectoryError("Directory backend belum tersedia, memakai data demo lokal.");
+      })
+      .finally(() => {
+        if (mounted) {
+          setIsLoadingStudents(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [refreshDirectories]);
+
   // Derived state for dynamic supervisor counts on lecturers
   const dynamicDosenList = dosenList.map(d => {
-    const p1Active = studentsList.filter(s => s.p1Id === d.id && s.stage !== 'Selesai').length;
-    const p2Active = studentsList.filter(s => s.p2Id === d.id && s.stage !== 'Selesai').length;
+    const p1Active = studentsList.filter(
+      s => s.p1Id === d.id && !s.isCompleted && s.stage !== 'Selesai'
+    ).length;
+    const p2Active = studentsList.filter(
+      s => s.p2Id === d.id && !s.isCompleted && s.stage !== 'Selesai'
+    ).length;
     return {
       ...d,
       p1Active,
@@ -259,6 +335,8 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
       s.nim.toLowerCase().includes(query) ||
       s.title.toLowerCase().includes(query) ||
       s.stage.toLowerCase().includes(query) ||
+      (s.p1Name && s.p1Name.toLowerCase().includes(query)) ||
+      (s.p2Name && s.p2Name.toLowerCase().includes(query)) ||
       (p1 && p1.name.toLowerCase().includes(query)) ||
       (p2 && p2.name.toLowerCase().includes(query))
     );
@@ -277,7 +355,10 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
       'Revisi Sidang': 'revisi-sidang',
       'Selesai': 'revisi-sidang'
     };
-    const targetStepId = stageMap[student.stage] || 'pendaftaran-ta';
+    const source = studentsList.find((item) => item.id === student.studentId);
+    const directoryStepId =
+      source?.activeStepId === "selesai" ? "revisi-sidang" : source?.activeStepId;
+    const targetStepId = directoryStepId || stageMap[student.stage] || 'pendaftaran-ta';
     sessionStorage.setItem('monitor_student_id', student.studentId);
     sessionStorage.setItem('monitor_step_id', targetStepId);
     window.location.hash = `#/${getCurrentRolePath()}/tahapan-akademik`;
@@ -287,29 +368,38 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
   const openEditQuotaModal = (dosen: DosenSupervisorData) => {
     setCurrentEditDosen(dosen);
     setQuotaP1Input(dosen.p1Max);
-    setQuotaP2Input(dosen.p2Max);
+    setQuotaError(null);
     setIsEditingQuota(true);
   };
 
   // Save Quota changes
-  const handleSaveQuota = (e: React.FormEvent) => {
+  const handleSaveQuota = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentEditDosen) return;
 
-    const updatedList = dosenList.map(item => {
-      if (item.id === currentEditDosen.id) {
-        return {
-          ...item,
-          p1Max: quotaP1Input,
-          p2Max: quotaP2Input
-        };
-      }
-      return item;
-    });
+    const activeQuota = Math.max(currentEditDosen.p1Active, currentEditDosen.p2Active);
+    if (quotaP1Input < activeQuota) {
+      setQuotaError(`Kuota tidak boleh kurang dari mahasiswa aktif (${activeQuota}).`);
+      return;
+    }
 
-    setDosenList(updatedList);
-    setIsEditingQuota(false);
-    setCurrentEditDosen(null);
+    setIsSavingQuota(true);
+    setQuotaError(null);
+
+    try {
+      await coordinatorWorkflowApi.updateLecturerQuota(currentEditDosen.id, {
+        quotaLimit: quotaP1Input,
+      });
+      await refreshDirectories();
+      setAssignmentToast("Kuota dosen berhasil diperbarui.");
+      setTimeout(() => setAssignmentToast(null), 3000);
+      setIsEditingQuota(false);
+      setCurrentEditDosen(null);
+    } catch {
+      setQuotaError("Kuota belum bisa disimpan ke backend. Coba ulangi setelah koneksi API siap.");
+    } finally {
+      setIsSavingQuota(false);
+    }
   };
 
   // Open Edit Pembimbing modal
@@ -318,33 +408,41 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
     setP1InputId(student.p1Id);
     setP2InputId(student.p2Id);
     setAlasanChange('');
+    setAssignmentError(null);
     setIsEditingPembimbing(true);
   };
 
   // Save Pembimbing changes
-  const handleSavePembimbing = (e: React.FormEvent) => {
+  const handleSavePembimbing = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentEditStudent) return;
 
     if (p1InputId === p2InputId) {
-      alert('Dosen Pembimbing 1 dan Pembimbing 2 tidak boleh sama.');
+      setAssignmentError('Dosen Pembimbing 1 dan Pembimbing 2 tidak boleh sama.');
       return;
     }
 
-    const updatedStudents = studentsList.map(s => {
-      if (s.id === currentEditStudent.id) {
-        return {
-          ...s,
-          p1Id: p1InputId,
-          p2Id: p2InputId
-        };
-      }
-      return s;
-    });
+    setIsSavingAssignment(true);
+    setAssignmentError(null);
 
-    setStudentsList(updatedStudents);
-    setIsEditingPembimbing(false);
-    setCurrentEditStudent(null);
+    try {
+      await coordinatorWorkflowApi.updateSupervisorAssignments(currentEditStudent.id, {
+        pembimbing1Id: p1InputId,
+        pembimbing2Id: p2InputId,
+        coordinatorNote: alasanChange.trim() || undefined,
+      });
+      await refreshDirectories();
+      setAssignmentToast("Penugasan dosen pembimbing berhasil diperbarui.");
+      setTimeout(() => setAssignmentToast(null), 3000);
+      setIsEditingPembimbing(false);
+      setCurrentEditStudent(null);
+    } catch {
+      setAssignmentError(
+        "Perubahan pembimbing belum bisa disimpan. Pastikan mahasiswa sudah punya pendaftaran TA berstatus Disetujui."
+      );
+    } finally {
+      setIsSavingAssignment(false);
+    }
   };
 
   const selectedDosen = dynamicDosenList.find(d => d.id === selectedDosenId);
@@ -447,13 +545,13 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
             <span className="px-1.5 py-0.5 text-[10px] rounded bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-extrabold border border-sky-200 dark:border-sky-800">
               P1
             </span>
-            <span className="text-foreground">{p1 ? p1.name : 'Belum Ditentukan'}</span>
+            <span className="text-foreground">{row.p1Name || p1?.name || 'Belum Ditentukan'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="px-1.5 py-0.5 text-[10px] rounded bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-extrabold border border-indigo-200 dark:border-indigo-800">
               P2
             </span>
-            <span className="text-foreground">{p2 ? p2.name : 'Belum Ditentukan'}</span>
+            <span className="text-foreground">{row.p2Name || p2?.name || 'Belum Ditentukan'}</span>
           </div>
         </div>
       );
@@ -583,6 +681,12 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
           title="Pembimbing & Kuota Tugas Akhir" 
           description="Manajemen kuota beban kerja dosen serta pemantauan dan alokasi dosen pembimbing mahasiswa."
         >
+          {assignmentToast && (
+            <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-400">
+              {assignmentToast}
+            </div>
+          )}
+
           {/* Main Tabs Navigation */}
           <div className="flex gap-2 mb-6 border-b border-border/80">
             <button
@@ -619,14 +723,14 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
                   <div className="absolute right-0 top-0 w-1.5 h-full bg-sky-500"></div>
                   <p className="text-[10px] font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider mb-1">Total Mahasiswa Aktif</p>
                   <h3 className="text-2xl font-extrabold text-sky-700 dark:text-sky-300">
-                    {studentsList.filter(s => s.stage !== 'Selesai').length} Mhs
+                    {studentsList.filter(s => !s.isCompleted && s.stage !== 'Selesai').length} Mhs
                   </h3>
                 </div>
                 <div className="p-4 border rounded-xl bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-900/50 shadow-xs relative overflow-hidden">
                   <div className="absolute right-0 top-0 w-1.5 h-full bg-emerald-500"></div>
                   <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">Total Mahasiswa Lulus</p>
                   <h3 className="text-2xl font-extrabold text-emerald-700 dark:text-emerald-300">
-                    {studentsList.filter(s => s.stage === 'Selesai').length} Mhs
+                    {studentsList.filter(s => !!s.isCompleted || s.stage === 'Selesai').length} Mhs
                   </h3>
                 </div>
               </div>
@@ -654,6 +758,12 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
                     </button>
                   )}
                 </div>
+
+                {(isLoadingStudents || directoryError) && (
+                  <div className="mb-4 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs font-semibold text-muted-foreground">
+                    {isLoadingStudents ? "Memuat directory mahasiswa..." : directoryError}
+                  </div>
+                )}
 
                 {filteredDosen.length === 0 ? (
                   <div className="py-12 border border-dashed border-border rounded-xl flex flex-col items-center justify-center text-center">
@@ -695,6 +805,12 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
                   </button>
                 )}
               </div>
+
+              {(isLoadingStudents || directoryError) && (
+                <div className="mb-4 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs font-semibold text-muted-foreground">
+                  {isLoadingStudents ? "Memuat directory mahasiswa..." : directoryError}
+                </div>
+              )}
               
               {filteredStudents.length === 0 ? (
                 <div className="py-12 border border-dashed border-border rounded-xl flex flex-col items-center justify-center text-center">
@@ -741,33 +857,26 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveQuota} className="space-y-4">
-              
-              {/* KUOTA MAKSIMAL P1 */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] text-muted-foreground uppercase font-bold block">Kuota Maksimal Pembimbing Utama (P1) <span className="text-rose-500">*</span></label>
-                <input 
-                  type="number" 
-                  required
-                  min={currentEditDosen.p1Active}
-                  value={quotaP1Input}
-                  onChange={(e) => setQuotaP1Input(parseInt(e.target.value) || 0)}
-                  className="w-full text-xs border rounded-lg px-3 py-2.5 focus:ring-1 focus:ring-primary bg-background text-foreground"
-                />
-                <p className="text-[9px] text-muted-foreground">Aktif Saat Ini: <strong>{currentEditDosen.p1Active} Mahasiswa</strong>. Batas kuota tidak boleh kurang dari mahasiswa aktif.</p>
-              </div>
+              {quotaError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200">
+                  {quotaError}
+                </div>
+              )}
 
-              {/* KUOTA MAKSIMAL P2 */}
               <div className="space-y-1.5">
-                <label className="text-[10px] text-muted-foreground uppercase font-bold block">Kuota Maksimal Pembimbing Pendamping (P2) <span className="text-rose-500">*</span></label>
+                <label className="text-[10px] text-muted-foreground uppercase font-bold block">Kuota Maksimal Dosen <span className="text-rose-500">*</span></label>
                 <input 
                   type="number" 
                   required
-                  min={currentEditDosen.p2Active}
-                  value={quotaP2Input}
-                  onChange={(e) => setQuotaP2Input(parseInt(e.target.value) || 0)}
+                  min={Math.max(currentEditDosen.p1Active, currentEditDosen.p2Active)}
+                  value={quotaP1Input}
+                  onChange={(e) => {
+                    const nextQuota = parseInt(e.target.value) || 0;
+                    setQuotaP1Input(nextQuota);
+                  }}
                   className="w-full text-xs border rounded-lg px-3 py-2.5 focus:ring-1 focus:ring-primary bg-background text-foreground"
                 />
-                <p className="text-[9px] text-muted-foreground">Aktif Saat Ini: <strong>{currentEditDosen.p2Active} Mahasiswa</strong>. Batas kuota tidak boleh kurang dari mahasiswa aktif.</p>
+                <p className="text-[9px] text-muted-foreground">Aktif Saat Ini: <strong>P1 {currentEditDosen.p1Active} Mahasiswa</strong> dan <strong>P2 {currentEditDosen.p2Active} Mahasiswa</strong>. Kuota tersimpan sebagai satu batas maksimal dosen.</p>
               </div>
 
               {/* ACTION BUTTONS */}
@@ -784,9 +893,10 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-sm"
+                  disabled={isSavingQuota}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-sm"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Simpan Kuota
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {isSavingQuota ? "Menyimpan..." : "Simpan Kuota"}
                 </button>
               </div>
 
@@ -823,6 +933,11 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleSavePembimbing} className="space-y-4">
+              {assignmentError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/20 dark:text-rose-400">
+                  {assignmentError}
+                </div>
+              )}
               
               {/* PEMBIMBING 1 SELECT */}
               <div className="space-y-1.5">
@@ -886,9 +1001,10 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-sm"
+                  disabled={isSavingAssignment}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-sm"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Simpan Perubahan
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {isSavingAssignment ? "Menyimpan..." : "Simpan Perubahan"}
                 </button>
               </div>
 

@@ -56,4 +56,28 @@ export const config = {
     process.env.REFRESH_TOKEN_TTL_SECONDS,
     60 * 60 * 24 * 7
   ),
+  auditExportCleanupEnabled: readBoolean(
+    process.env.AUDIT_EXPORT_CLEANUP_ENABLED,
+    false
+  ),
+  auditExportCleanupIntervalSeconds: readNumber(
+    process.env.AUDIT_EXPORT_CLEANUP_INTERVAL_SECONDS,
+    60 * 60 * 24
+  ),
+  auditExportAllowedRetentionDays: readNumber(
+    process.env.AUDIT_EXPORT_ALLOWED_RETENTION_DAYS,
+    30
+  ),
+  auditExportBlockedRetentionDays: readNumber(
+    process.env.AUDIT_EXPORT_BLOCKED_RETENTION_DAYS,
+    90
+  ),
+  auditExportCleanupBatchSize: readNumber(
+    process.env.AUDIT_EXPORT_CLEANUP_BATCH_SIZE,
+    1000
+  ),
+  auditExportCleanupAdvisoryLockKey: readNumber(
+    process.env.AUDIT_EXPORT_CLEANUP_ADVISORY_LOCK_KEY,
+    810081
+  ),
 };

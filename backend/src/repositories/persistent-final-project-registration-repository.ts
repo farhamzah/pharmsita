@@ -3,6 +3,7 @@ import type { DatabaseAdapter } from "../database/schema";
 import type {
   FinalProjectRegistration,
   FinalProjectRegistrationStatus,
+  SupervisorAssignment,
 } from "../domain/types";
 import type {
   FinalProjectRegistrationListResult,
@@ -201,6 +202,44 @@ export class PersistentFinalProjectRegistrationRepository
       registration.updatedBy = input.actorId;
       registration.supervisorAssignments =
         input.status === "Disetujui" ? input.supervisorAssignments || [] : [];
+      updated = registration;
+    });
+
+    return updated ? cloneRegistration(updated) : null;
+  }
+
+  replaceSupervisorAssignmentsByStudentId(
+    studentId: string,
+    assignments: SupervisorAssignment[],
+    input: {
+      actorId: string;
+      timestamp: string;
+      coordinatorNote?: string;
+    }
+  ) {
+    let updated: FinalProjectRegistration | null = null;
+
+    this.database.update((state) => {
+      const registration = state.finalProjectRegistrations
+        .filter(
+          (item) =>
+            item.studentId === studentId &&
+            item.status === "Disetujui"
+        )
+        .sort(byNewest)[0];
+
+      if (!registration) {
+        return;
+      }
+
+      registration.supervisorAssignments = assignments.map((assignment) => ({
+        ...assignment,
+        assignedBy: assignment.assignedBy ?? input.actorId,
+        assignedAt: assignment.assignedAt || input.timestamp,
+        coordinatorNote: assignment.coordinatorNote || input.coordinatorNote,
+      }));
+      registration.updatedAt = input.timestamp;
+      registration.updatedBy = input.actorId;
       updated = registration;
     });
 

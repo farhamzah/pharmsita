@@ -11,6 +11,26 @@ export interface UserSummary {
 }
 
 export interface UserAccount extends UserSummary {
+  password?: string;
+  phone?: string;
+  address?: string;
+  gender?: "Laki-laki" | "Perempuan";
+  birthDate?: string;
+  nim?: string;
+  programStudi?: string;
+  angkatan?: string;
+  kelas?: string;
+  skemaTA?: "Skripsi" | "Non Skripsi";
+  jenisTA?: string;
+  nidn?: string;
+  bidangKeahlian?: string[];
+  jabatanAkademik?: string;
+  peranSistem?: string[];
+  jabatan?: string;
+  hakAksesUtama?: string[];
+  divisi?: string;
+  tingkatAkses?: "Superadmin" | "Admin Prodi";
+  cakupanAkses?: string[];
   passwordStatus?: "active" | "needs_activation" | "reset_requested";
   forceChangeOnLogin?: boolean;
   lastLoginAt?: string | null;
@@ -51,6 +71,42 @@ export interface AuditLog {
   after?: unknown;
   reason?: string;
   createdAt: string;
+}
+
+export interface AuditLogFilter {
+  limit?: number;
+  offset?: number;
+  action?: string | null;
+  resourceType?: string | null;
+  resourceId?: string | null;
+  actorRole?: UserRole | null;
+  createdFrom?: string | null;
+  createdTo?: string | null;
+}
+
+export type AuditExportScope = "admin" | "koordinator";
+
+export interface AuditExportAttempt {
+  id: string;
+  actorId: string | null;
+  actorRole: UserRole | null;
+  scope: AuditExportScope;
+  attemptedAt: string;
+  allowed: boolean;
+  windowStartedAt: string;
+  attemptsInWindow: number;
+  maxAttempts: number;
+  windowSeconds: number;
+}
+
+export interface AuditExportAttemptFilter {
+  limit?: number;
+  offset?: number;
+  scope?: AuditExportScope | null;
+  actorRole?: UserRole | null;
+  allowed?: boolean | null;
+  createdFrom?: string | null;
+  createdTo?: string | null;
 }
 
 export interface AcademicPeriod {
@@ -203,9 +259,112 @@ export interface StudentStep {
   isLocked: boolean;
 }
 
+export interface StudentDirectoryItem {
+  id: string;
+  name: string;
+  identifier: string;
+  email?: string;
+  status: UserStatus;
+  nim?: string;
+  programStudi?: string;
+  angkatan?: string;
+  kelas?: string;
+  thesisTitle?: string;
+  activeStepId?: StepId | null;
+  activeStepLabel: string;
+  activeStepStatus?: StepStatus | null;
+  isCompleted: boolean;
+  supervisor1Id?: string | null;
+  supervisor1Name?: string;
+  supervisor2Id?: string | null;
+  supervisor2Name?: string;
+  supervisorRole?: "pembimbing-1" | "pembimbing-2" | null;
+}
+
+export interface LecturerDirectoryItem {
+  id: string;
+  name: string;
+  identifier: string;
+  email?: string;
+  status: UserStatus;
+  nidn?: string;
+  expertise?: string;
+  programStudi?: string;
+  jabatan?: string;
+  quotaLimit: number;
+  p1Active: number;
+  p2Active: number;
+  completedCount: number;
+}
+
 export type GuidanceStage = "bimbingan-pra-proposal" | "bimbingan-pra-sidang";
+export type GuidanceType =
+  | "seminar-proposal"
+  | "sidang-akhir"
+  | "revisi-seminar-proposal"
+  | "revisi-sidang-akhir";
+export type GuidanceRequestStatus =
+  | "Draft"
+  | "Menunggu Validasi Dosen"
+  | "Disetujui"
+  | "Ditolak";
+export type GuidanceMaterialStatus = "Draft" | "Diajukan" | "Valid" | "Ditolak";
 export type GuidanceSessionStatus = "pending" | "in progress" | "approved";
 export type GuidanceScheduleStatus = "idle" | "requested" | "approved";
+
+export interface GuidanceMaterial {
+  id: string;
+  guidanceRequestId: string;
+  materialType: "normal" | "revision";
+  sourceRevisionItemId?: string | null;
+  topic: string;
+  content?: string;
+  status: GuidanceMaterialStatus;
+  attemptNumber: number;
+  submittedAt?: string | null;
+  validatedAt?: string | null;
+  validatedBy?: string | null;
+  lecturerNote?: string;
+  attemptSummary?: {
+    totalAttempts: number;
+    latestAttemptNumber: number;
+    latestMaterialId: string;
+    latestStatus: GuidanceMaterialStatus;
+    isLatestAttempt: boolean;
+    hasRejectedAttempt: boolean;
+    latestRejectedNote?: string;
+    latestRejectedAt?: string | null;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+  updatedBy?: string | null;
+}
+
+export interface GuidanceRequest {
+  id: string;
+  studentId: string;
+  guidanceType: GuidanceType;
+  googleDocsLink: string;
+  status: GuidanceRequestStatus;
+  studentNote?: string;
+  lecturerNote?: string;
+  submittedAt?: string | null;
+  validatedAt?: string | null;
+  validatedBy?: string | null;
+  activeLecturerId?: string | null;
+  activeLecturerName?: string;
+  materialSummary: {
+    validCount: number;
+    requiredValidCount: number;
+    pendingCount: number;
+    rejectedCount: number;
+    canSubmitNextGate: boolean;
+  };
+  materials: GuidanceMaterial[];
+  createdAt?: string;
+  updatedAt?: string;
+  updatedBy?: string | null;
+}
 
 export interface GuidanceSession {
   id: number;
@@ -262,6 +421,7 @@ export type ChairApprovalStatus = "pending" | "approved" | "rejected";
 
 export interface RevisionItem {
   id: number;
+  sourceRevisionItemId?: string;
   title: string;
   topik: string;
   materi: string;
@@ -281,4 +441,32 @@ export interface RevisionWorkflow {
   ketuaSidangStatus: ChairApprovalStatus;
   submittedAt: string | null;
   items: RevisionItem[];
+}
+
+export type RevisionCompletionGateAction = "final-upload" | "progress-completion";
+
+export interface RevisionCompletionGateCheck {
+  code:
+    | "REVISION_ITEMS_AVAILABLE"
+    | "REVISION_ITEMS_DONE"
+    | "PENGUJI_1_APPROVED"
+    | "PENGUJI_2_APPROVED"
+    | "CHAIR_APPROVED"
+    | "FINAL_FILE_UPLOADED";
+  label: string;
+  passed: boolean;
+  detail: string;
+  requiredFor: RevisionCompletionGateAction[];
+}
+
+export interface RevisionCompletionGateStatus {
+  stageId: RevisionStage;
+  readyForFinalUpload: boolean;
+  readyForProgressCompletion: boolean;
+  finalFile: string | null;
+  finalUploadBlockingReasons: string[];
+  progressCompletionBlockingReasons: string[];
+  blockingReasons: string[];
+  checks: RevisionCompletionGateCheck[];
+  evaluatedAt: string;
 }
