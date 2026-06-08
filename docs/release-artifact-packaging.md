@@ -72,7 +72,7 @@ Artifact utama membawa:
 - `dist/`
 - `backend/dist/`
 - `backend/database/migrations/`
-- production tools untuk migration, bootstrap admin, no-demo smoke, VPS dry-run, release cutover drill, live cutover QA, live evidence capture, Go/No-Go remediation, operator evidence review, dan audit cleanup
+- production tools untuk migration, bootstrap admin, no-demo smoke, role profile smoke, VPS dry-run, release cutover drill, live cutover QA, live evidence capture, Go/No-Go remediation, operator evidence review, dan audit cleanup
 - production tools untuk database backup, restore drill, dan pre-migration safety gate
 - `deploy/vps/`
 - production runbooks
@@ -103,6 +103,7 @@ npm ci --omit=dev
 npm run backend:check-production-env
 npm run release:cutover:drill -- --release-archive ../<release-id>.tar.gz --artifact-checksums ../artifact-checksums.sha256 --work-dir /tmp/pharmsita-cutover-drill --skip-network --skip-db --force
 npm run db:migrate:status
+npm run ui:qa:role-profile
 npm run deploy:vps:dry-run -- --api-base-url https://pharmsita.example.ac.id/api/v1
 npm run release:live-cutover:qa -- --release-dir . --release-archive ../<release-id>.tar.gz --artifact-checksums ../artifact-checksums.sha256 --skip-system --skip-network --skip-db --force
 npm run release:live-evidence:capture -- --release-dir . --release-archive ../<release-id>.tar.gz --artifact-checksums ../artifact-checksums.sha256 --skip-system --skip-network --skip-db --allow-incomplete --force

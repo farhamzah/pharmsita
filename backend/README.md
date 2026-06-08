@@ -333,6 +333,14 @@ npm.cmd run api:smoke:postgres-final-project
 
 Script ini menjalankan migration `001` sampai `004`, seed demo auth, seed demo master data, lalu menguji master data `thesisTypeId`, draft/submit pendaftaran TA, validasi koordinator, progress completion, dan audit log dengan `DB_ADAPTER=postgres` di port `4104` kecuali `API_BASE_URL` sudah diset.
 
+Role profile UI smoke test:
+
+```powershell
+npm.cmd run ui:qa:role-profile
+```
+
+Script ini membutuhkan backend dan frontend yang sedang berjalan, lalu membuat/mereset fixture `qa119-*`, login UI sebagai Mahasiswa/Dosen/Koordinator/Admin, edit profil, reload halaman, dan memvalidasi data terhadap `/auth/profile`. Detail operasional ada di `docs/role-profile-smoke-runbook.md`.
+
 ## Environment
 
 Backend membaca env berikut:

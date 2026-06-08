@@ -17,6 +17,7 @@
     "api:smoke:auth-alignment": "node tools/auth-alignment-smoke-test.mjs",
     "api:smoke:final-project": "node tools/final-project-registration-smoke-test.mjs",
     "ui:qa:postgres-student-workflow": "node tools/student-workflow-postgres-ui-http-qa.mjs",
+    "ui:qa:role-profile": "node tools/role-profile-smoke-test.mjs",
     "audit:cleanup:export-attempts": "node tools/audit-export-attempt-cleanup.mjs",
     "deploy:vps:dry-run": "node tools/vps-deployment-dry-run.mjs",
     "release:package": "node tools/create-release-bundle.mjs",

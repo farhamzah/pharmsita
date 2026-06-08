@@ -25,12 +25,14 @@ interface UnifiedProfileViewProps {
   initialProfile: BaseProfile;
   onSave?: (updatedProfile: any) => void | Promise<any>;
   canEdit?: boolean;
+  isProfileLoading?: boolean;
 }
 
 export const UnifiedProfileView: React.FC<UnifiedProfileViewProps> = ({
   initialProfile,
   onSave,
-  canEdit = true
+  canEdit = true,
+  isProfileLoading = false
 }) => {
   const [profile, setProfile] = useState<any>(initialProfile);
   const [isEditing, setIsEditing] = useState(false);
@@ -117,7 +119,6 @@ export const UnifiedProfileView: React.FC<UnifiedProfileViewProps> = ({
         ? (initialProfile as any).cakupanAkses.join(", ")
         : (initialProfile as any).cakupanAkses || ""
     );
-    setIsEditing(false);
   }, [initialProfile]);
 
   // Cast profiles for role-specific renders
@@ -352,10 +353,15 @@ export const UnifiedProfileView: React.FC<UnifiedProfileViewProps> = ({
             {/* Action Edit Button */}
             {canEdit && !isEditing && (
               <button
+                type="button"
+                disabled={isProfileLoading}
                 onClick={() => setIsEditing(true)}
-                className="w-full mt-6 py-2.5 px-4 bg-primary text-primary-foreground hover:opacity-90 font-bold rounded-xl shadow-xs transition text-xs cursor-pointer"
+                className={cn(
+                  "w-full mt-6 py-2.5 px-4 bg-primary text-primary-foreground hover:opacity-90 font-bold rounded-xl shadow-xs transition text-xs cursor-pointer",
+                  isProfileLoading && "cursor-not-allowed opacity-60 hover:opacity-60"
+                )}
               >
-                Edit Informasi Profil
+                {isProfileLoading ? "Memuat Profil..." : "Edit Informasi Profil"}
               </button>
             )}
           </div>

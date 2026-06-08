@@ -21,7 +21,11 @@ const AdminProfilePage: React.FC = () => {
             <p className="mb-4 text-sm text-muted-foreground">Memuat profil session...</p>
           )}
           {error && <p className="mb-4 text-sm text-amber-600">{error}</p>}
-          <UnifiedProfileView initialProfile={adminProfile} onSave={saveProfile} />
+          <UnifiedProfileView
+            initialProfile={adminProfile}
+            isProfileLoading={isLoading}
+            onSave={saveProfile}
+          />
         </div>
       </ContentWrapper>
     </MainLayout>

@@ -321,11 +321,14 @@ Wajib sebelum deploy:
 npm.cmd run build
 npm.cmd run backend:build
 npm.cmd run backend:check
+npm.cmd run ui:qa:role-profile
 npm.cmd run deploy:vps:dry-run -- --skip-network
 npm.cmd run release:package
 npm.cmd run db:backup:check-tools
 git diff --check
 ```
+
+`ui:qa:role-profile` membutuhkan backend dan frontend target sudah berjalan. Untuk localhost, script memakai admin lokal default. Untuk staging/VPS, set `ROLE_PROFILE_QA_API_BASE_URL`, `ROLE_PROFILE_QA_FRONTEND_URL`, `ROLE_PROFILE_QA_ADMIN_IDENTIFIER`, dan `ROLE_PROFILE_QA_ADMIN_PASSWORD`. Detail: `docs/role-profile-smoke-runbook.md`.
 
 Smoke test PostgreSQL boleh dijalankan di database staging atau database smoke terpisah:
 

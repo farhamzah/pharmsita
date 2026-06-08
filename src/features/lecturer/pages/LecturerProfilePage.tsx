@@ -21,7 +21,11 @@ export const LecturerProfilePage: React.FC = () => {
             <p className="mb-4 text-sm text-muted-foreground">Memuat profil session...</p>
           )}
           {error && <p className="mb-4 text-sm text-amber-600">{error}</p>}
-          <UnifiedProfileView initialProfile={lecturerProfile} onSave={saveProfile} />
+          <UnifiedProfileView
+            initialProfile={lecturerProfile}
+            isProfileLoading={isLoading}
+            onSave={saveProfile}
+          />
         </div>
       </ContentWrapper>
     </RoleLayoutComponent>

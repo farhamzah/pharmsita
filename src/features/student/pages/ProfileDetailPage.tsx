@@ -20,7 +20,11 @@ const DetailProfilPage = () => {
             <p className="text-sm text-muted-foreground">Memuat profil session...</p>
           )}
           {error && <p className="text-sm text-amber-600">{error}</p>}
-          <UnifiedProfileView initialProfile={studentProfile} onSave={saveProfile} />
+          <UnifiedProfileView
+            initialProfile={studentProfile}
+            isProfileLoading={isLoading}
+            onSave={saveProfile}
+          />
         </div>
       </ContentWrapper>
     </MainLayout>
