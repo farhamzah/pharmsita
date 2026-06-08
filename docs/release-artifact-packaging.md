@@ -75,7 +75,7 @@ Artifact utama membawa:
 - production tools untuk migration, bootstrap admin, no-demo smoke, role profile smoke, VPS dry-run, release cutover drill, live cutover QA, live evidence capture, Go/No-Go remediation, operator evidence review, dan audit cleanup
 - production tools untuk database backup, restore drill, dan pre-migration safety gate
 - `deploy/vps/`
-- production runbooks
+- production runbooks, readiness gap review, evidence matrix, environment finalization packet, local PostgreSQL verification reports, dan local release evidence packet
 - `package.json` dan `package-lock.json`
 - env example production
 

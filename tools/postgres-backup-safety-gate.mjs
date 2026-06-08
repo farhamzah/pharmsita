@@ -216,6 +216,14 @@ const runProcess = (binary, args, env) =>
     });
   });
 
+const isIgnorableRestoreVersionWarning = (error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('unrecognized configuration parameter "transaction_timeout"') &&
+    message.includes("errors ignored on restore: 1")
+  );
+};
+
 const checkTool = async (binary, required) => {
   try {
     const result = await runProcess(binary, ["--version"], process.env);
@@ -532,11 +540,17 @@ const runRestoreDrill = async (options) => {
   const tool = await checkTool("pg_restore", true);
   if (tool.status !== "PASS") throw new Error(`pg_restore is required: ${tool.detail}`);
 
-  await runProcess(
-    "pg_restore",
-    ["--clean", "--if-exists", "--no-owner", "--no-acl", "--dbname", target.database, verification.backupFile],
-    env
-  );
+  let restoreWarning = "";
+  try {
+    await runProcess(
+      "pg_restore",
+      ["--clean", "--if-exists", "--no-owner", "--no-acl", "--dbname", target.database, verification.backupFile],
+      env
+    );
+  } catch (error) {
+    if (!isIgnorableRestoreVersionWarning(error)) throw error;
+    restoreWarning = error instanceof Error ? error.message : String(error);
+  }
 
   const schema = await verifyCoreSchema(options.restoreDatabaseUrl, options.restoreSsl);
   const timestamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
@@ -563,6 +577,7 @@ const runRestoreDrill = async (options) => {
       sslMode: env.PGSSLMODE || "",
       redactedUrl: redactDatabaseUrl(options.restoreDatabaseUrl),
     },
+    restoreWarning,
     checks: schema,
   };
   await fs.writeFile(drillManifestPath, `${JSON.stringify(drillManifest, null, 2)}\n`);
@@ -572,6 +587,7 @@ const runRestoreDrill = async (options) => {
     { item: "target", value: `${target.host}:${target.port}/${target.database}` },
     { item: "publicTables", value: String(schema.publicTableCount) },
     { item: "missingTables", value: schema.missingTables.join(", ") || "-" },
+    { item: "restoreWarning", value: restoreWarning ? "transaction_timeout ignored after schema PASS" : "-" },
   ]);
   if (!schema.ok) throw new Error("Restore drill failed schema verification.");
 };

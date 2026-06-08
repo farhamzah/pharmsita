@@ -413,6 +413,8 @@ Jika `nginx -t` butuh root, jalankan command dengan `--sudo-system` atau eksekus
 
 ## Evidence Capture dan Go/No-Go
 
+Lihat `docs/production-readiness-gap-review.md` untuk review gap setelah profile QA gate dan kriteria produksi GO/NO-GO terbaru. Gunakan `docs/production-evidence-matrix.md` sebagai checklist operator dan matriks evidence sebelum sign-off. Gunakan `docs/production-environment-finalization.md` untuk finalisasi env/domain dan dry-run evidence sebelum eksekusi live.
+
 Setelah live QA PASS, ambil bukti operasional dan buat keputusan Go/No-Go:
 
 ```bash
