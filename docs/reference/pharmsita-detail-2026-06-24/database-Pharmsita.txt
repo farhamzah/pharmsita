@@ -1,0 +1,351 @@
+// 1. User Management
+Table users {
+  id uuid [pk]
+  username varchar [unique]
+  password_hash varchar
+  full_name varchar
+  email varchar
+  phone varchar
+  gender varchar
+  study_program_id uuid [not null]
+  first_login boolean [default: true]
+  is_active boolean [default: true]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table roles {
+  id uuid [pk]
+  code varchar(50) [unique, not null]
+  name varchar(100) [not null]
+  created_at timestamp
+}
+
+Table user_roles {
+  id uuid [pk]
+  user_id uuid [not null]
+  role_id uuid [not null]
+  created_at timestamp
+  assigned_at timestamp
+}
+
+Table thesis_committees {
+  id uuid [pk]
+  thesis_id uuid [not null]
+  lecturer_id uuid [not null]
+  role varchar(30)
+  // SUPERVISOR_1
+  // SUPERVISOR_2
+  assigned_at timestamp
+}
+
+Table lecturer_quotas {
+  id uuid [pk]
+  lecturer_id uuid [not null, unique]
+  supervisor_1_quota int [not null]
+  supervisor_2_quota int [not null]
+  created_at timestamp
+  updated_at timestamp
+}
+
+// 2. Master Data
+
+Table notifications {
+  id uuid [pk]
+  user_id uuid [not null]
+  title varchar
+  message text
+  is_read boolean [default: false]
+  created_by uuid [null]
+  created_at timestamp
+}
+
+// default quota
+Table system_settings {
+  id uuid [pk]
+  key varchar(100) [unique]
+  // DEFAULT_SUPERVISOR_1_QUOTA
+  // DEFAULT_SUPERVISOR_2_QUOTA
+  value varchar(255)
+  update_at timestamp
+  // 5
+  // 5
+}
+
+// skripsi/nonskripsi
+Table thesis_schemes {
+  id uuid [pk]
+  code varchar(50) [unique, not null]
+  name varchar(100) [not null]
+  is_active boolean [default: true]
+  created_at timestamp
+  update_at timestamp
+}
+
+// item skema Ta
+Table thesis_types {
+  id uuid [pk]
+  scheme_id uuid [not null]
+  name varchar(100) [not null]
+  is_active boolean [default: true]
+  created_at timestamp
+}
+
+Table thesis_stages {
+  id uuid [pk]
+  code varchar(50) [unique, not null]
+  name varchar(100) [not null]
+  // Note:
+  // PROPOSAL_GUIDANCE
+  // PROPOSAL_SEMINAR
+  // PROPOSAL_REVISION
+  // FINAL_GUIDANCE
+  // FINAL_DEFENSE
+  // FINAL_REVISION
+  // COMPLETED
+  // '
+  created_at timestamp
+  update_at timestamp
+}
+
+Table thesis_stage_histories {
+  id uuid [pk]
+  thesis_id uuid [not null]
+  stage_id uuid [not null]
+  started_at timestamp
+  finished_at timestamp
+  created_at timestamp
+}
+
+Table requirement_categories {
+  id uuid [pk]
+  code varchar(50) [unique, not null]
+  name varchar(100) [not null]
+  is_active boolean [default: true]
+  created_at timestamp
+  update_at timestamp
+}
+
+Table requirements {
+  id uuid [pk]
+  category_id uuid [not null]
+  name varchar(255) [not null]
+  is_required boolean [default: true]
+  is_active boolean [default: true]
+  created_at timestamp
+}
+
+Table faculties {
+  id uuid [pk]
+  code varchar(20) [unique, not null]
+  name varchar(100) [not null]
+  is_active boolean [default: true]
+  created_at timestamp
+  updated_at timestamp
+}
+
+
+Table study_programs {
+  id uuid [pk]
+  faculty_id uuid [not null]
+  name varchar(100) [not null]
+  is_active boolean [not null, default: true]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table academic_periods {
+  id uuid [pk]
+  code varchar(50) [unique, not null]
+  name varchar
+  is_active boolean
+  start_date timestamp
+  end_date timestamp
+  created_at timestamp
+  updated_at timestamp
+}
+
+// 3. Registrasi Tugas Akhir
+Table thesis_registrations {
+  id uuid [pk]
+  student_id uuid [not null]
+  academic_period_id uuid [not null]
+  thesis_type_id uuid [not null]
+  title varchar(255) [not null]
+  title_description text
+  payment_proof_file_url text [not null]
+  recommended_supervisor_1_id uuid
+  status varchar(50) [not null]
+  validation_note text
+  submitted_at timestamp
+  validated_at timestamp
+  created_at timestamp
+  updated_at timestamp
+}
+
+// 4. Data Tugas Akhir
+Table theses {
+  id uuid [pk]
+  registration_id uuid [not null, unique]
+  student_id uuid [not null, unique]
+  title varchar(255)
+  status varchar(50)
+  started_at timestamp
+  created_at timestamp
+}
+
+// 5. Bimbingan
+Table guidance_requests {
+  id uuid [pk]
+  submitted_by uuid [not null]
+  approved_by uuid
+  thesis_stage_id uuid [not null]
+  document_link text [not null]
+  status varchar(50)
+// status
+// PENDING
+// APPROVED
+// REJECTED
+  validate_note text
+  submitted_at timestamp
+  approved_at timestamp
+  created_at timestamp
+}
+
+Table guidance_materials {
+  id uuid [pk]
+  guidance_request_id uuid [not null]
+  revision_note_id uuid [null, unique]
+  submitted_by uuid [not null]
+  title varchar(255)
+  status varchar(50)
+  // status
+  // DRAFT
+  // PENDING
+  // VALID
+  // REJECTED
+  validated_by uuid
+  submitted_at timestamp
+  validated_at timestamp
+  created_at timestamp
+}
+
+// 6. Pengajuan Tahapan Seminar/Sidang
+Table stage_submissions {
+  id uuid [pk]
+  thesis_stage_id uuid [not null]
+  requirement_drive_link text
+  latest_document_file text
+  status varchar(50)
+  validation_note text
+  validated_by uuid
+  submitted_at timestamp
+  validated_at timestamp
+  created_at timestamp
+}
+
+Table stage_submission_requirement_validations {
+  id uuid [pk]
+  stage_submission_id uuid [not null]
+  requirement_id uuid [not null]
+  is_checked boolean [default: false]
+  validated_by uuid
+  validated_at timestamp
+  created_at timestamp
+  indexes {
+    (stage_submission_id, requirement_id) [unique]
+  }
+}
+
+
+// 7. Jadwal Seminar/Sidang
+Table thesis_schedules {
+  id uuid [pk]
+  student_id uuid [not null]
+  thesis_stage_id uuid [not null]
+  room varchar(100)
+  start_time timestamp
+  end_time timestamp
+  created_by uuid
+  created_at timestamp
+  updated_at timestamp
+}
+
+// 8. Penilaian Seminar/Sidang
+Table thesis_assessments {
+  id uuid [pk]
+  schedule_id uuid [not null]
+  examiner_id uuid [not null]
+  role varchar(30)
+  // CHAIRMAN
+  // EXAMINER_1
+  // EXAMINER_2
+  presentation_score decimal(5,2)
+  writing_score decimal(5,2)
+  qa_score decimal(5,2)
+  total_score decimal(5,2)
+  created_at timestamp
+}
+
+// 9. Bimbingan Revisi
+Table revision_notes {
+  id uuid [pk]
+  assessment_id uuid [not null]
+  title varchar(255)
+  status varchar(50)
+  // DRAFT
+  // PENDING
+  // COMPLETED
+  created_at timestamp
+}
+
+// Master
+Ref: user_roles.user_id > users.id
+Ref: user_roles.role_id > roles.id
+Ref: notifications.user_id > users.id
+Ref: notifications.created_by > users.id
+Ref: users.study_program_id > study_programs.id
+Ref: thesis_types.scheme_id > thesis_schemes.id
+Ref: requirements.category_id > requirement_categories.id
+Ref: thesis_committees.thesis_id > theses.id
+Ref: thesis_committees.lecturer_id > users.id
+Ref: lecturer_quotas.lecturer_id > users.id
+Ref: study_programs.faculty_id > faculties.id
+
+// Registrasi
+Ref: thesis_registrations.student_id > users.id
+Ref: thesis_registrations.thesis_type_id > thesis_types.id
+Ref: thesis_registrations.academic_period_id > academic_periods.id
+
+// Thesis
+Ref: theses.registration_id > thesis_registrations.id
+Ref: theses.student_id > users.id
+Ref: thesis_stage_histories.thesis_id > theses.id
+Ref: thesis_stage_histories.stage_id > thesis_stages.id
+
+// Guidance
+Ref: guidance_requests.thesis_stage_id > thesis_stages.id
+Ref: guidance_requests.submitted_by > users.id
+Ref: guidance_requests.approved_by > users.id
+Ref: guidance_materials.guidance_request_id > guidance_requests.id
+Ref: guidance_materials.submitted_by > users.id
+Ref: guidance_materials.revision_note_id > revision_notes.id
+Ref: guidance_materials.validated_by > users.id
+
+// pengajuan sempro/sidan dan validasi persyaratan
+Ref: stage_submissions.thesis_stage_id >  thesis_stages.id
+Ref: stage_submissions.validated_by > users.id
+
+Ref: stage_submission_requirement_validations.stage_submission_id > stage_submissions.id
+Ref: stage_submission_requirement_validations.requirement_id > requirements.id
+Ref: stage_submission_requirement_validations.validated_by > users.id
+
+// jawdal dan penilaian
+Ref: thesis_schedules.thesis_stage_id > thesis_stages.id
+Ref: thesis_schedules.student_id > users.id
+Ref: thesis_schedules.created_by > users.id
+Ref: thesis_assessments.schedule_id > thesis_schedules.id
+Ref: thesis_assessments.examiner_id > users.id
+
+// Revision
+Ref: revision_notes.assessment_id > thesis_assessments.id

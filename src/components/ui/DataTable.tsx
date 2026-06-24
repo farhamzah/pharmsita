@@ -28,6 +28,13 @@ export default function DataTable<T>({
               <th
                 key={String(col.key)}
                 className="px-4 py-2 text-left whitespace-nowrap"
+                aria-sort={
+                  sortKey === col.key
+                    ? sortDirection === 'asc'
+                      ? 'ascending'
+                      : 'descending'
+                    : undefined
+                }
               >
                 <DataTableHeader
                   label={col.label}

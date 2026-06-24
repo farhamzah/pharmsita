@@ -11,6 +11,7 @@ import type {
   GuidanceRequest,
   GuidanceRequestStatus,
   LecturerDirectoryItem,
+  CoordinatorLifecycleSummaryItem,
   SupervisorAssignment,
   GuidanceType,
   AuditExportAttempt,
@@ -23,7 +24,10 @@ import type {
   RefreshTokenRecord,
   RevisionStage,
   RevisionWorkflow,
+  CoordinatorLifecycleStageCode,
+  SortDirection,
   StudentDirectoryItem,
+  StudentDirectorySortBy,
   StepId,
   StepStatus,
   StudentStep,
@@ -73,9 +77,26 @@ export interface UserRepository {
     lecturerId: string,
     input: { quotaLimit: number; actorId: string; timestamp: string }
   ): Awaitable<LecturerDirectoryItem | null>;
+  listCoordinatorLifecycleSummary(): Awaitable<CoordinatorLifecycleSummaryItem[]>;
     listStudentDirectory(options?: {
       lecturerId?: string | null;
-    }): Awaitable<StudentDirectoryItem[]>;
+      stage?: CoordinatorLifecycleStageCode | null;
+      q?: string | null;
+      page?: number;
+      limit?: number;
+      sortBy?: StudentDirectorySortBy;
+      sortDir?: SortDirection;
+    }): Awaitable<{
+      data: StudentDirectoryItem[];
+      meta: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+        sortBy: StudentDirectorySortBy;
+        sortDir: SortDirection;
+      };
+    }>;
     replaceAll(users: UserAccount[]): Awaitable<UserAccount[]>;
     createUser(
       input: Omit<UserAccount, "id"> & {

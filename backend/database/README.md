@@ -22,6 +22,8 @@ migrations/005_guidance_type_materials.sql
 migrations/006_audit_export_guard.sql
 migrations/007_user_profile_contact.sql
 migrations/008_role_profile_fields.sql
+migrations/009_canonical_pharmsita_schema_boundary.sql
+migrations/010_canonical_read_models.sql
 ```
 
 Scope `001_auth_master_data.sql`:
@@ -83,6 +85,25 @@ Scope `008_role_profile_fields.sql`:
 - Field khusus koordinator: `jabatan`, `program_studi`, `hak_akses_utama`
 - Field khusus admin: `divisi`, `tingkat_akses`, `cakupan_akses`
 
+Scope `009_canonical_pharmsita_schema_boundary.sql`:
+
+- Boundary schema canonical dari referensi database detail PharmSITA
+- Role canonical, faculty/study program, thesis scheme/stage, requirement category
+- Bridge `final_project_registrations` ke `thesis_registrations` dan `theses`
+- Bridge supervisor assignment ke `thesis_committees` dan lecturer quota canonical
+- Bridge guidance, stage submission, schedule, assessment, dan revision note
+- Read model `canonical_thesis_lifecycle_summary` dan `canonical_guidance_material_summary`
+- Repository write path pendaftaran TA dijelaskan di `../../docs/canonical-registration-write-path.md`
+- Repository write path bimbingan dijelaskan di `../../docs/canonical-guidance-write-path.md`
+- Repository write path sidang, jadwal, assessment, dan revisi dijelaskan di `../../docs/canonical-stage-exam-revision-write-path.md`
+
+Scope `010_canonical_read_models.sql`:
+
+- View `canonical_student_directory_summary` untuk directory mahasiswa dosen/koordinator
+- View `canonical_lecturer_monitoring_summary` untuk monitoring kuota dan beban pembimbing
+- View `canonical_coordinator_reporting_summary` untuk agregasi lifecycle mahasiswa per tahap/status
+- Repository read path dijelaskan di `../../docs/canonical-read-model-migration.md`
+
 ## Seed
 
 ```text
@@ -114,6 +135,8 @@ Urutan lokal PostgreSQL QA yang disarankan:
 006_audit_export_guard.sql
 007_user_profile_contact.sql
 008_role_profile_fields.sql
+009_canonical_pharmsita_schema_boundary.sql
+010_canonical_read_models.sql
 001_demo_auth.sql
 002_demo_master_data.sql
 ```
@@ -129,6 +152,8 @@ Urutan production no-demo:
 006_audit_export_guard.sql
 007_user_profile_contact.sql
 008_role_profile_fields.sql
+009_canonical_pharmsita_schema_boundary.sql
+010_canonical_read_models.sql
 ```
 
 Bootstrap admin production dijelaskan di:

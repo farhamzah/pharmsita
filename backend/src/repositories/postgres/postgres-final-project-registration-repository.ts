@@ -102,6 +102,24 @@ const aliasedOrderByNewest = (alias: string) => `
   ${alias}.id DESC
 `;
 
+const toCanonicalRegistrationStatus = (status: FinalProjectRegistrationStatus) => {
+  switch (status) {
+    case "Draft":
+      return "DRAFT";
+    case "Menunggu Validasi Koordinator":
+      return "PENDING";
+    case "Disetujui":
+      return "APPROVED";
+    case "Ditolak":
+      return "REJECTED";
+    default:
+      return "PENDING";
+  }
+};
+
+const toCanonicalCommitteeRole = (supervisorOrder: SupervisorAssignment["supervisorOrder"]) =>
+  supervisorOrder === 1 ? "SUPERVISOR_1" : "SUPERVISOR_2";
+
 export class PostgresFinalProjectRegistrationRepository
   implements FinalProjectRegistrationRepository
 {
@@ -219,6 +237,7 @@ export class PostgresFinalProjectRegistrationRepository
       const row = existing
         ? await this.updateStudentRegistration(existing.id, input, status, client)
         : await this.insertStudentRegistration(studentId, input, status, client);
+      await this.syncCanonicalRegistration(row, client);
       const registrations = await this.hydrate([row], client);
 
       if (!registrations[0]) {
@@ -261,6 +280,8 @@ export class PostgresFinalProjectRegistrationRepository
         return null;
       }
 
+      await this.syncCanonicalRegistration(updated, client);
+
       await client.query(
         `
           DELETE FROM supervisor_assignments
@@ -275,6 +296,11 @@ export class PostgresFinalProjectRegistrationRepository
           input.supervisorAssignments || [],
           input.actorId,
           input.timestamp,
+          client
+        );
+        await this.ensureCanonicalThesisWithCommitteeSync(
+          updated,
+          input.supervisorAssignments || [],
           client
         );
       }
@@ -299,6 +325,13 @@ export class PostgresFinalProjectRegistrationRepository
         return null;
       }
 
+      const normalizedAssignments = assignments.map((assignment) => ({
+        ...assignment,
+        assignedBy: assignment.assignedBy ?? input.actorId,
+        assignedAt: assignment.assignedAt || input.timestamp,
+        coordinatorNote: assignment.coordinatorNote || input.coordinatorNote,
+      }));
+
       await client.query(
         `
           DELETE FROM supervisor_assignments
@@ -309,12 +342,7 @@ export class PostgresFinalProjectRegistrationRepository
 
       await this.insertSupervisorAssignments(
         registration.id,
-        assignments.map((assignment) => ({
-          ...assignment,
-          assignedBy: assignment.assignedBy ?? input.actorId,
-          assignedAt: assignment.assignedAt || input.timestamp,
-          coordinatorNote: assignment.coordinatorNote || input.coordinatorNote,
-        })),
+        normalizedAssignments,
         input.actorId,
         input.timestamp,
         client
@@ -329,6 +357,15 @@ export class PostgresFinalProjectRegistrationRepository
         `,
         [registration.id, input.timestamp, input.actorId]
       );
+      const updated = updatedResult.rows[0];
+      if (updated) {
+        await this.syncCanonicalRegistration(updated, client);
+        await this.ensureCanonicalThesisWithCommitteeSync(
+          updated,
+          normalizedAssignments,
+          client
+        );
+      }
       const registrations = await this.hydrate(updatedResult.rows, client);
       return registrations[0] || null;
     });
@@ -522,6 +559,230 @@ export class PostgresFinalProjectRegistrationRepository
           assignment.coordinatorNote || null,
           timestamp,
           actorId,
+        ]
+      );
+    }
+  }
+
+  private async syncCanonicalRegistration(
+    registration: FinalProjectRegistrationRow,
+    client: PostgresTransactionClient
+  ) {
+    await client.query(
+      `
+        INSERT INTO thesis_registrations (
+          id,
+          legacy_final_project_registration_id,
+          student_id,
+          academic_period_id,
+          thesis_type_id,
+          title,
+          title_description,
+          requirement_drive_link,
+          payment_proof_file_url,
+          recommended_supervisor_1_id,
+          status,
+          validation_note,
+          submitted_at,
+          validated_at,
+          validated_by,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        VALUES (
+          $1, $1, $2, $3, $4, $5, $6, $7, $8, $9,
+          $10, $11, $12, $13, $14, $15, $16, $17
+        )
+        ON CONFLICT (id) DO UPDATE
+        SET
+          legacy_final_project_registration_id = EXCLUDED.legacy_final_project_registration_id,
+          student_id = EXCLUDED.student_id,
+          academic_period_id = EXCLUDED.academic_period_id,
+          thesis_type_id = EXCLUDED.thesis_type_id,
+          title = EXCLUDED.title,
+          title_description = EXCLUDED.title_description,
+          requirement_drive_link = EXCLUDED.requirement_drive_link,
+          payment_proof_file_url = EXCLUDED.payment_proof_file_url,
+          recommended_supervisor_1_id = EXCLUDED.recommended_supervisor_1_id,
+          status = EXCLUDED.status,
+          validation_note = EXCLUDED.validation_note,
+          submitted_at = EXCLUDED.submitted_at,
+          validated_at = EXCLUDED.validated_at,
+          validated_by = EXCLUDED.validated_by,
+          updated_at = EXCLUDED.updated_at,
+          updated_by = EXCLUDED.updated_by
+      `,
+      [
+        registration.id,
+        registration.student_id,
+        registration.academic_period_id,
+        registration.thesis_type_id,
+        registration.judul_ta || "",
+        registration.deskripsi_ta,
+        registration.requirement_drive_link,
+        registration.payment_proof_link || registration.payment_proof_file_ref,
+        registration.requested_supervisor1_id,
+        toCanonicalRegistrationStatus(registration.status),
+        registration.coordinator_note,
+        registration.submitted_at,
+        registration.validated_at,
+        registration.validated_by,
+        registration.created_at,
+        registration.updated_at,
+        registration.updated_by,
+      ]
+    );
+  }
+
+  private async ensureCanonicalThesisWithCommitteeSync(
+    registration: FinalProjectRegistrationRow,
+    assignments: SupervisorAssignment[],
+    client: PostgresTransactionClient
+  ) {
+    if (registration.status !== "Disetujui") {
+      return;
+    }
+
+    const thesisId = await this.ensureCanonicalThesis(registration, client);
+    if (!thesisId) {
+      throw new Error("Canonical thesis stage PROPOSAL_GUIDANCE is missing.");
+    }
+
+    await this.ensureCanonicalInitialStageHistory(thesisId, client);
+    await this.syncCanonicalCommittees(thesisId, assignments, client);
+  }
+
+  private async ensureCanonicalThesis(
+    registration: FinalProjectRegistrationRow,
+    client: PostgresTransactionClient
+  ) {
+    const result = await client.query<{ id: string }>(
+      `
+        WITH proposal_stage AS (
+          SELECT id
+          FROM thesis_stages
+          WHERE code = 'PROPOSAL_GUIDANCE'
+          LIMIT 1
+        )
+        INSERT INTO theses (
+          registration_id,
+          student_id,
+          title,
+          status,
+          current_stage_id,
+          started_at,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        SELECT
+          $1,
+          $2,
+          $3,
+          'ACTIVE',
+          proposal_stage.id,
+          COALESCE($4::timestamptz, $5::timestamptz, $6::timestamptz, NOW()),
+          COALESCE($6::timestamptz, NOW()),
+          COALESCE($7::timestamptz, $4::timestamptz, NOW()),
+          $8
+        FROM proposal_stage
+        ON CONFLICT (registration_id) DO UPDATE
+        SET
+          student_id = EXCLUDED.student_id,
+          title = EXCLUDED.title,
+          status = CASE
+            WHEN theses.status = 'CANCELLED' THEN 'ACTIVE'
+            ELSE theses.status
+          END,
+          current_stage_id = COALESCE(theses.current_stage_id, EXCLUDED.current_stage_id),
+          started_at = COALESCE(theses.started_at, EXCLUDED.started_at),
+          updated_at = EXCLUDED.updated_at,
+          updated_by = EXCLUDED.updated_by
+        RETURNING id
+      `,
+      [
+        registration.id,
+        registration.student_id,
+        registration.judul_ta || "",
+        registration.validated_at,
+        registration.submitted_at,
+        registration.created_at,
+        registration.updated_at,
+        registration.updated_by,
+      ]
+    );
+
+    return result.rows[0]?.id || null;
+  }
+
+  private async ensureCanonicalInitialStageHistory(
+    thesisId: string,
+    client: PostgresTransactionClient
+  ) {
+    await client.query(
+      `
+        INSERT INTO thesis_stage_histories (
+          thesis_id,
+          stage_id,
+          status,
+          started_at,
+          created_at
+        )
+        SELECT
+          thesis.id,
+          thesis.current_stage_id,
+          'ACTIVE',
+          COALESCE(thesis.started_at, thesis.created_at, NOW()),
+          COALESCE(thesis.created_at, NOW())
+        FROM theses thesis
+        WHERE thesis.id = $1
+          AND thesis.current_stage_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM thesis_stage_histories history
+            WHERE history.thesis_id = thesis.id
+              AND history.stage_id = thesis.current_stage_id
+              AND history.finished_at IS NULL
+          )
+      `,
+      [thesisId]
+    );
+  }
+
+  private async syncCanonicalCommittees(
+    thesisId: string,
+    assignments: SupervisorAssignment[],
+    client: PostgresTransactionClient
+  ) {
+    for (const assignment of assignments) {
+      if (!assignment.lecturerId || assignment.status !== "Aktif") {
+        continue;
+      }
+
+      await client.query(
+        `
+          INSERT INTO thesis_committees (
+            thesis_id,
+            lecturer_id,
+            role,
+            assigned_at,
+            assigned_by,
+            created_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $4)
+          ON CONFLICT (thesis_id, role) DO UPDATE
+          SET
+            lecturer_id = EXCLUDED.lecturer_id,
+            assigned_at = EXCLUDED.assigned_at,
+            assigned_by = EXCLUDED.assigned_by
+        `,
+        [
+          thesisId,
+          assignment.lecturerId,
+          toCanonicalCommitteeRole(assignment.supervisorOrder),
+          assignment.assignedAt,
+          assignment.assignedBy || null,
         ]
       );
     }

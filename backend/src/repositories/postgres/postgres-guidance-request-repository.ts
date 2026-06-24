@@ -64,11 +64,16 @@ const requestBaseFrom = `
 const materialColumns = `
   id,
   guidance_workflow_id,
+  guidance_request_id,
+  revision_note_id,
+  submitted_by,
+  title,
   material_type,
   source_revision_item_id,
   topic,
   content,
   status,
+  canonical_status,
   attempt_number,
   submitted_at,
   validated_at,
@@ -104,11 +109,16 @@ interface GuidanceRequestRow {
 interface GuidanceMaterialRow {
   id: string;
   guidance_workflow_id: string;
+  guidance_request_id: string | null;
+  revision_note_id: string | null;
+  submitted_by: string | null;
+  title: string | null;
   material_type: GuidanceMaterial["materialType"];
   source_revision_item_id: string | null;
   topic: string;
   content: string | null;
   status: GuidanceMaterial["status"];
+  canonical_status: string | null;
   attempt_number: number;
   submitted_at: Date | string | null;
   validated_at: Date | string | null;
@@ -133,12 +143,27 @@ const guidanceTypeByStageId: Partial<Record<StepId, GuidanceType>> = {
   "revisi-sidang": "revisi-sidang-akhir",
 };
 
+const toCanonicalMaterialStatus = (status: GuidanceMaterial["status"]) => {
+  switch (status) {
+    case "Draft":
+      return "DRAFT";
+    case "Diajukan":
+      return "PENDING";
+    case "Valid":
+      return "VALID";
+    case "Ditolak":
+      return "REJECTED";
+    default:
+      return "PENDING";
+  }
+};
+
 const toMaterial = (row: GuidanceMaterialRow): GuidanceMaterial => ({
   id: row.id,
-  guidanceRequestId: row.guidance_workflow_id,
+  guidanceRequestId: row.guidance_request_id || row.guidance_workflow_id,
   materialType: row.material_type,
   sourceRevisionItemId: row.source_revision_item_id,
-  topic: row.topic,
+  topic: row.title || row.topic,
   content: row.content || undefined,
   status: row.status,
   attemptNumber: Number(row.attempt_number),
@@ -300,6 +325,13 @@ export class PostgresGuidanceRequestRepository
         ]
       );
 
+      if (result.rows[0]) {
+        await this.syncCanonicalGuidanceRequestByWorkflowId(
+          result.rows[0].id,
+          client
+        );
+      }
+
       return result.rows[0];
     });
 
@@ -352,24 +384,35 @@ export class PostgresGuidanceRequestRepository
   }
 
   async validateRequest(id: string, input: GuidanceRequestValidationInput) {
-    const result = await this.pool.query<{ id: string }>(
-      `
-        UPDATE guidance_workflows
-        SET
-          guidance_status = CASE WHEN $2 = 'Disetujui' THEN 'approved' ELSE guidance_status END,
-          request_status = $2,
-          guidance_approved_at = CASE WHEN $2 = 'Disetujui' THEN $4 ELSE guidance_approved_at END,
-          guidance_approval_note = $3,
-          validated_at = $4,
-          validated_by = $5,
-          lecturer_note = $3,
-          updated_at = $4,
-          updated_by = $5
-        WHERE id = $1
-        RETURNING id
-      `,
-      [id, input.status, input.lecturerNote || null, input.timestamp, input.actorId]
-    );
+    const result = await this.withTransaction(async (client) => {
+      const updated = await client.query<{ id: string }>(
+        `
+          UPDATE guidance_workflows
+          SET
+            guidance_status = CASE WHEN $2 = 'Disetujui' THEN 'approved' ELSE guidance_status END,
+            request_status = $2,
+            guidance_approved_at = CASE WHEN $2 = 'Disetujui' THEN $4 ELSE guidance_approved_at END,
+            guidance_approval_note = $3,
+            validated_at = $4,
+            validated_by = $5,
+            lecturer_note = $3,
+            updated_at = $4,
+            updated_by = $5
+          WHERE id = $1
+          RETURNING id
+        `,
+        [id, input.status, input.lecturerNote || null, input.timestamp, input.actorId]
+      );
+
+      if (updated.rows[0]) {
+        await this.syncCanonicalGuidanceRequestByWorkflowId(
+          updated.rows[0].id,
+          client
+        );
+      }
+
+      return updated;
+    });
 
     return result.rows[0] ? this.findById(result.rows[0].id) : null;
   }
@@ -404,6 +447,8 @@ export class PostgresGuidanceRequestRepository
         return null;
       }
 
+      await this.syncCanonicalGuidanceRequestByWorkflowId(id, client);
+
       const attemptResult = await client.query<{ next_attempt_number: string }>(
         `
           SELECT (COALESCE(MAX(attempt_number), 0) + 1)::TEXT AS next_attempt_number
@@ -424,11 +469,16 @@ export class PostgresGuidanceRequestRepository
         `
           INSERT INTO guidance_materials (
             guidance_workflow_id,
+            guidance_request_id,
+            submitted_by,
+            title,
             material_type,
             source_revision_item_id,
+            revision_note_id,
             topic,
             content,
             status,
+            canonical_status,
             attempt_number,
             submitted_at,
             created_at,
@@ -436,7 +486,27 @@ export class PostgresGuidanceRequestRepository
             updated_by
           )
           VALUES (
-            $1, $2, $3, $4, $5, 'Diajukan', $6, $7, $7, $7, $8
+            $1,
+            $1,
+            $8,
+            $4,
+            $2,
+            $3,
+            (
+              SELECT id
+              FROM revision_notes
+              WHERE legacy_revision_item_id = $3::uuid
+              LIMIT 1
+            ),
+            $4,
+            $5,
+            'Diajukan',
+            'PENDING',
+            $6,
+            $7,
+            $7,
+            $7,
+            $8
           )
           RETURNING ${materialColumns}
         `,
@@ -461,7 +531,12 @@ export class PostgresGuidanceRequestRepository
         [id, input.timestamp, input.actorId]
       );
 
-      return inserted.rows[0] || null;
+      const material = inserted.rows[0] || null;
+      if (material) {
+        await this.syncCanonicalGuidanceMaterialById(material.id, client);
+      }
+
+      return material;
     });
 
     return row ? toMaterial(row) : null;
@@ -474,6 +549,7 @@ export class PostgresGuidanceRequestRepository
           UPDATE guidance_materials
           SET
             status = $2,
+            canonical_status = $6,
             lecturer_note = $3,
             validated_at = $4,
             validated_by = $5,
@@ -482,7 +558,14 @@ export class PostgresGuidanceRequestRepository
           WHERE id = $1
           RETURNING ${materialColumns}
         `,
-        [id, input.status, input.lecturerNote || null, input.timestamp, input.actorId]
+        [
+          id,
+          input.status,
+          input.lecturerNote || null,
+          input.timestamp,
+          input.actorId,
+          toCanonicalMaterialStatus(input.status),
+        ]
       );
       const material = result.rows[0];
 
@@ -499,10 +582,127 @@ export class PostgresGuidanceRequestRepository
         [material.guidance_workflow_id, input.timestamp, input.actorId]
       );
 
+      await this.syncCanonicalGuidanceRequestByWorkflowId(
+        material.guidance_workflow_id,
+        client
+      );
+      await this.syncCanonicalGuidanceMaterialById(material.id, client);
+
       return material;
     });
 
     return row ? toMaterial(row) : null;
+  }
+
+  private async syncCanonicalGuidanceRequestByWorkflowId(
+    guidanceWorkflowId: string,
+    client: PostgresTransactionClient
+  ) {
+    const result = await client.query<{ id: string }>(
+      `
+        INSERT INTO guidance_requests (
+          id,
+          legacy_guidance_workflow_id,
+          thesis_id,
+          submitted_by,
+          approved_by,
+          thesis_stage_id,
+          document_link,
+          status,
+          validate_note,
+          submitted_at,
+          approved_at,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        SELECT
+          gw.id,
+          gw.id,
+          thesis.id,
+          gw.student_id,
+          gw.validated_by,
+          stage.id,
+          COALESCE(gw.google_docs_link, ''),
+          CASE gw.request_status
+            WHEN 'Draft' THEN 'DRAFT'
+            WHEN 'Menunggu Validasi Dosen' THEN 'PENDING'
+            WHEN 'Disetujui' THEN 'APPROVED'
+            WHEN 'Ditolak' THEN 'REJECTED'
+            ELSE CASE gw.guidance_status
+              WHEN 'requested' THEN 'PENDING'
+              WHEN 'approved' THEN 'APPROVED'
+              ELSE 'DRAFT'
+            END
+          END,
+          COALESCE(gw.lecturer_note, gw.guidance_approval_note, gw.guidance_note),
+          gw.guidance_requested_at,
+          COALESCE(gw.validated_at, gw.guidance_approved_at),
+          COALESCE(gw.created_at, NOW()),
+          gw.updated_at,
+          gw.updated_by
+        FROM guidance_workflows gw
+        JOIN thesis_stages stage
+          ON stage.legacy_step_id = gw.stage_id
+        LEFT JOIN theses thesis
+          ON thesis.student_id = gw.student_id
+          AND thesis.status IN ('ACTIVE', 'IN_PROGRESS')
+        WHERE gw.id = $1
+        ON CONFLICT (id) DO UPDATE
+        SET
+          legacy_guidance_workflow_id = EXCLUDED.legacy_guidance_workflow_id,
+          thesis_id = EXCLUDED.thesis_id,
+          submitted_by = EXCLUDED.submitted_by,
+          approved_by = EXCLUDED.approved_by,
+          thesis_stage_id = EXCLUDED.thesis_stage_id,
+          document_link = EXCLUDED.document_link,
+          status = EXCLUDED.status,
+          validate_note = EXCLUDED.validate_note,
+          submitted_at = EXCLUDED.submitted_at,
+          approved_at = EXCLUDED.approved_at,
+          updated_at = EXCLUDED.updated_at,
+          updated_by = EXCLUDED.updated_by
+        RETURNING id
+      `,
+      [guidanceWorkflowId]
+    );
+
+    if (!result.rows[0]) {
+      throw new Error("Canonical guidance stage mapping is missing.");
+    }
+
+    return result.rows[0].id;
+  }
+
+  private async syncCanonicalGuidanceMaterialById(
+    materialId: string,
+    client: PostgresTransactionClient
+  ) {
+    await client.query(
+      `
+        UPDATE guidance_materials material
+        SET
+          guidance_request_id = request.id,
+          submitted_by = COALESCE(material.submitted_by, workflow.student_id),
+          title = COALESCE(NULLIF(TRIM(material.title), ''), material.topic),
+          canonical_status = CASE material.status
+            WHEN 'Draft' THEN 'DRAFT'
+            WHEN 'Diajukan' THEN 'PENDING'
+            WHEN 'Valid' THEN 'VALID'
+            WHEN 'Ditolak' THEN 'REJECTED'
+            ELSE 'PENDING'
+          END,
+          revision_note_id = COALESCE(material.revision_note_id, note.id)
+        FROM guidance_workflows workflow
+        LEFT JOIN guidance_requests request
+          ON request.legacy_guidance_workflow_id = workflow.id
+        LEFT JOIN revision_notes note
+          ON note.legacy_revision_item_id = material.source_revision_item_id
+        WHERE material.id = $1
+          AND workflow.id = material.guidance_workflow_id
+      `,
+      [materialId]
+    );
   }
 
   private async hydrate(

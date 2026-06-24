@@ -27,7 +27,7 @@ export function navigateTo(path: string) {
 }
 
 function getCurrentRouteName() {
-  return window.location.hash.replace(/^#\/?/, '') || 'login';
+  return window.location.hash.replace(/^#\/?/, '').split('?')[0] || 'login';
 }
 
 function renderRoute(name: string) {

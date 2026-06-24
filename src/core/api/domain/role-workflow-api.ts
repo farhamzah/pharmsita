@@ -52,6 +52,15 @@ type RoleWorkflowResponse<TData> = {
     studentId?: string;
     scope?: string;
     lecturerId?: string;
+    source?: string;
+    stage?: string | null;
+    q?: string | null;
+    page?: number;
+    limit?: number;
+    total?: number;
+    totalPages?: number;
+    sortBy?: string;
+    sortDir?: "asc" | "desc";
   };
 };
 
@@ -77,6 +86,19 @@ export interface StudentDirectoryItem {
   supervisorRole?: "pembimbing-1" | "pembimbing-2" | null;
 }
 
+export type CoordinatorLifecycleStageCode =
+  | "UNREGISTERED"
+  | "PROPOSAL_GUIDANCE"
+  | "PROPOSAL_SEMINAR"
+  | "PROPOSAL_REVISION"
+  | "FINAL_GUIDANCE"
+  | "FINAL_DEFENSE"
+  | "FINAL_REVISION"
+  | "COMPLETED";
+
+export type StudentDirectorySortBy = "name" | "nim" | "stage" | "supervisor1";
+export type SortDirection = "asc" | "desc";
+
 export interface LecturerDirectoryItem {
   id: string;
   name: string;
@@ -91,6 +113,15 @@ export interface LecturerDirectoryItem {
   p1Active: number;
   p2Active: number;
   completedCount: number;
+}
+
+export interface CoordinatorLifecycleSummaryItem {
+  stageCode: string;
+  stageName: string;
+  lifecycleStatus: string;
+  studentCount: number;
+  activeThesisCount: number;
+  completedThesisCount: number;
 }
 
 type ProgressUpdateRequest = {
@@ -265,6 +296,173 @@ const mockLecturerDirectory: LecturerDirectoryItem[] = [
   },
 ];
 
+const mockCoordinatorLifecycleSummary: CoordinatorLifecycleSummaryItem[] = [
+  {
+    stageCode: "PROPOSAL_GUIDANCE",
+    stageName: "Bimbingan Proposal",
+    lifecycleStatus: "IN_PROGRESS",
+    studentCount: 1,
+    activeThesisCount: 1,
+    completedThesisCount: 0,
+  },
+  {
+    stageCode: "PROPOSAL_SEMINAR",
+    stageName: "Seminar Proposal",
+    lifecycleStatus: "IN_PROGRESS",
+    studentCount: 1,
+    activeThesisCount: 1,
+    completedThesisCount: 0,
+  },
+  {
+    stageCode: "FINAL_DEFENSE",
+    stageName: "Sidang Akhir",
+    lifecycleStatus: "IN_PROGRESS",
+    studentCount: 1,
+    activeThesisCount: 1,
+    completedThesisCount: 0,
+  },
+  {
+    stageCode: "FINAL_REVISION",
+    stageName: "Revisi Sidang Akhir",
+    lifecycleStatus: "IN_PROGRESS",
+    studentCount: 1,
+    activeThesisCount: 1,
+    completedThesisCount: 0,
+  },
+  {
+    stageCode: "COMPLETED",
+    stageName: "Selesai",
+    lifecycleStatus: "COMPLETED",
+    studentCount: 1,
+    activeThesisCount: 0,
+    completedThesisCount: 1,
+  },
+];
+
+const lifecycleStageToStepId: Partial<
+  Record<CoordinatorLifecycleStageCode, StudentDirectoryItem["activeStepId"]>
+> = {
+  PROPOSAL_GUIDANCE: "bimbingan-pra-proposal",
+  PROPOSAL_SEMINAR: "sidang-proposal",
+  PROPOSAL_REVISION: "revisi-proposal",
+  FINAL_GUIDANCE: "bimbingan-pra-sidang",
+  FINAL_DEFENSE: "sidang",
+  FINAL_REVISION: "revisi-sidang",
+};
+
+const filterMockStudentDirectoryByStage = (
+  students: StudentDirectoryItem[],
+  stage?: string | number | boolean | null
+) => {
+  if (!stage || typeof stage !== "string") {
+    return students;
+  }
+
+  if (stage === "COMPLETED") {
+    return students.filter((student) => student.isCompleted);
+  }
+
+  if (stage === "UNREGISTERED") {
+    return students.filter(
+      (student) =>
+        !student.isCompleted &&
+        (!student.activeStepId || student.activeStepId === "pendaftaran-ta")
+    );
+  }
+
+  const activeStepId = lifecycleStageToStepId[stage as CoordinatorLifecycleStageCode];
+  if (!activeStepId) {
+    return students;
+  }
+
+  return students.filter((student) => student.activeStepId === activeStepId);
+};
+
+const filterMockStudentDirectoryBySearch = (
+  students: StudentDirectoryItem[],
+  q?: string | number | boolean | null
+) => {
+  if (!q || typeof q !== "string") {
+    return students;
+  }
+
+  const normalized = q.trim().toLowerCase();
+  if (!normalized) {
+    return students;
+  }
+
+  return students.filter((student) =>
+    [
+      student.name,
+      student.identifier,
+      student.nim,
+      student.email,
+      student.thesisTitle,
+      student.supervisor1Name,
+      student.supervisor2Name,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalized))
+  );
+};
+
+const paginateMockStudentDirectory = (
+  students: StudentDirectoryItem[],
+  pageValue?: string | number | boolean | null,
+  limitValue?: string | number | boolean | null
+) => {
+  const page = Math.max(1, Number(pageValue || 1) || 1);
+  const limit = Math.max(1, Number(limitValue || 20) || 20);
+  const total = students.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const start = (page - 1) * limit;
+
+  return {
+    data: students.slice(start, start + limit),
+    meta: { page, limit, total, totalPages },
+  };
+};
+
+const readMockSortValue = (
+  student: StudentDirectoryItem,
+  sortBy: StudentDirectorySortBy
+) => {
+  if (sortBy === "nim") return student.nim || student.identifier;
+  if (sortBy === "stage") return student.activeStepLabel;
+  if (sortBy === "supervisor1") return student.supervisor1Name || "";
+  return student.name;
+};
+
+const sortMockStudentDirectory = (
+  students: StudentDirectoryItem[],
+  sortBy?: string | number | boolean | null,
+  sortDir?: string | number | boolean | null
+) => {
+  const resolvedSortBy: StudentDirectorySortBy =
+    sortBy === "nim" || sortBy === "stage" || sortBy === "supervisor1"
+      ? sortBy
+      : "name";
+  const resolvedSortDir: SortDirection = sortDir === "desc" ? "desc" : "asc";
+  const direction = resolvedSortDir === "desc" ? -1 : 1;
+
+  return [...students].sort((left, right) => {
+    const primary = readMockSortValue(left, resolvedSortBy).localeCompare(
+      readMockSortValue(right, resolvedSortBy),
+      "id",
+      { numeric: true, sensitivity: "base" }
+    );
+
+    if (primary !== 0) {
+      return primary * direction;
+    }
+
+    return left.name.localeCompare(right.name, "id", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
+};
+
 mockApiAdapter.register("GET", "/lecturer/students", () => ({
   data: mockStudentDirectory,
   meta: { scope: "lecturer", lecturerId: "mock_dosen" },
@@ -394,9 +592,33 @@ const registerCoordinatorMockRoutes = (prefix: "/coordinator" | "/kordinator") =
     }
   );
 
-  mockApiAdapter.register("GET", `${prefix}/students`, () => ({
-    data: mockStudentDirectory,
-    meta: { scope: prefix.replace("/", "") },
+  mockApiAdapter.register("GET", `${prefix}/students`, ({ query }) => {
+    const filtered = filterMockStudentDirectoryBySearch(
+      filterMockStudentDirectoryByStage(mockStudentDirectory, query?.stage),
+      query?.q
+    );
+    const sorted = sortMockStudentDirectory(filtered, query?.sortBy, query?.sortDir);
+    const paged = paginateMockStudentDirectory(sorted, query?.page, query?.limit);
+
+    return {
+      data: paged.data,
+      meta: {
+        ...paged.meta,
+        scope: prefix.replace("/", ""),
+        stage: query?.stage || null,
+        q: query?.q || null,
+        sortBy: query?.sortBy || "name",
+        sortDir: query?.sortDir === "desc" ? "desc" : "asc",
+      },
+    };
+  });
+
+  mockApiAdapter.register("GET", `${prefix}/reports/lifecycle-summary`, () => ({
+    data: mockCoordinatorLifecycleSummary,
+    meta: {
+      scope: prefix.replace("/", ""),
+      source: "canonical_coordinator_reporting_summary",
+    },
   }));
 
   mockApiAdapter.register<SupervisorAssignmentsUpdateRequest>(
@@ -683,9 +905,31 @@ export const coordinatorWorkflowApi = {
       payload
     );
   },
-  listStudents() {
+  listStudents(
+    options: {
+      stage?: CoordinatorLifecycleStageCode | null;
+      q?: string | null;
+      page?: number;
+      limit?: number;
+      sortBy?: StudentDirectorySortBy;
+      sortDir?: SortDirection;
+    } = {}
+  ) {
     return apiClient.get<RoleWorkflowResponse<StudentDirectoryItem[]>>(
-      "/coordinator/students"
+      "/coordinator/students",
+      {
+        stage: options.stage || undefined,
+        q: options.q || undefined,
+        page: options.page,
+        limit: options.limit,
+        sortBy: options.sortBy,
+        sortDir: options.sortDir,
+      }
+    );
+  },
+  getLifecycleSummary() {
+    return apiClient.get<RoleWorkflowResponse<CoordinatorLifecycleSummaryItem[]>>(
+      "/coordinator/reports/lifecycle-summary"
     );
   },
   updateSupervisorAssignments(

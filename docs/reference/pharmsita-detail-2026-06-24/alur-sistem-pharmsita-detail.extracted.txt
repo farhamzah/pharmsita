@@ -1,0 +1,616 @@
+===== PAGE 1 =====
+1. Login Sistem
+Aktor
+• Mahasiswa
+• Dosen
+• Koordinator
+• Operator Akademik
+Alur
+1. User memasukkan username dan password.
+2. Sistem memvalidasi kredensial pengguna.
+3. Sistem memeriksa jumlah role yang dimiliki user.
+4. Jika user memiliki lebih dari satu role:
+o Sistem menampilkan daftar role yang tersedia.
+o User memilih role yang akan digunakan.
+5. Jika user hanya memiliki satu role:
+o Sistem langsung menggunakan role tersebut.
+6. Sistem memeriksa status First Login.
+7. Jika First Login:
+o User wajib melengkapi biodata.
+o User wajib mengganti password.
+8. Jika biodata telah lengkap dan password telah diganti:
+o Sistem mengarahkan user ke halaman utama sesuai role yang digunakan.
+
+2. Mengajukan Pendaftaran Tugas Akhir
+Aktor
+• Mahasiswa
+Alur
+1. Mahasiswa membuka menu Pendaftaran Tugas Akhir.
+2. Sistem menampilkan daftar persyaratan pendaftaran Tugas Akhir.
+3. Mahasiswa mengunggah bukti pembayaran atau kuitansi pendaftaran Tugas Akhir.
+4. Mahasiswa mengisi data pendaftaran yang terdiri dari:
+o Link Google Drive berisi dokumen persyaratan pendaftaran Tugas Akhir.
+o Skema Tugas Akhir.
+o Jenis Tugas Akhir.
+
+===== PAGE 2 =====
+o Judul Tugas Akhir.
+o Deskripsi Judul.
+o Rekomendasi Pembimbing 1.
+5. Mahasiswa mengirim pengajuan pendaftaran.
+6. Sistem menyimpan data pendaftaran dengan status Menunggu Validasi Koordinator.
+
+3. Memvalidasi Pendaftaran Tugas Akhir
+Aktor
+• Koordinator
+Alur
+1. Koordinator membuka daftar pengajuan pendaftaran Tugas Akhir.
+2. Sistem menampilkan data pendaftaran beserta daftar persyaratan yang harus dipenuhi.
+3. Koordinator memeriksa:
+o Kelengkapan persyaratan pendaftaran.
+o Kesesuaian bukti pembayaran.
+o Kesesuaian skema Tugas Akhir.
+o Kesesuaian jenis Tugas Akhir.
+o Kelayakan judul Tugas Akhir.
+4. Jika pengajuan tidak memenuhi syarat:
+o Koordinator menolak pengajuan.
+o Koordinator mengisi catatan penolakan.
+o Sistem mengubah status pengajuan menjadi Ditolak.
+5. Jika pengajuan memenuhi syarat:
+o Koordinator menentukan Pembimbing 1.
+o Koordinator menentukan Pembimbing 2.
+o Koordinator menyetujui pengajuan.
+6. Sistem:
+o Membuat data Tugas Akhir aktif.
+o Menyimpan data pembimbing.
+o Menyelesaikan tahap Pendaftaran TA.
+o Membuat tahap Bimbingan Proposal sebagai tahap aktif.
+o Mengubah status mahasiswa menjadi TA Aktif.
+
+4. Mengajukan Bimbingan
+Aktor
+
+===== PAGE 3 =====
+• Mahasiswa
+Tahapan
+• Bimbingan Proposal
+• Revisi Proposal
+• Bimbingan Sidang Akhir
+• Revisi Sidang Akhir
+Alur
+1. Mahasiswa memilih tahapan bimbingan yang sedang aktif.
+2. Mahasiswa menginput link Google Docs yang digunakan untuk proses bimbingan.
+3. Mahasiswa mengirim pengajuan bimbingan.
+4. Sistem menyimpan pengajuan dengan status Menunggu Persetujuan Dosen.
+5. Sistem mengirim notifikasi kepada dosen yang berwenang melakukan validasi.
+
+5. Memvalidasi Pengajuan Bimbingan
+Aktor
+• Dosen Pembimbing
+• Dosen Penguji (untuk tahapan revisi)
+Alur
+1. Dosen membuka daftar pengajuan bimbingan.
+2. Dosen memeriksa link Google Docs yang diajukan mahasiswa.
+3. Jika dokumen belum layak untuk dibimbing:
+o Dosen menolak pengajuan.
+o Dosen memberikan catatan perbaikan.
+4. Jika dokumen layak:
+o Dosen menyetujui pengajuan.
+5. Sistem mengubah status pengajuan menjadi Disetujui.
+6. Sistem mengaktifkan proses bimbingan pada tahapan tersebut.
+
+6. Mengajukan Materi Bimbingan
+Aktor
+
+===== PAGE 4 =====
+• Mahasiswa
+A. Bimbingan Normal
+(Bimbingan Proposal dan Bimbingan Sidang Akhir)
+Alur
+1. Mahasiswa menginput judul materi yang telah dikerjakan atau diperbaiki pada Google
+Docs.
+2. Mahasiswa mengirim materi bimbingan.
+3. Sistem menyimpan materi dengan status Menunggu Validasi Dosen.
+4. Materi yang berstatus Valid akan dihitung sebagai progres bimbingan mahasiswa.
+5. Minimal terdapat 8 materi bimbingan berstatus Valid sebagai syarat pengajuan Seminar
+Proposal maupun Sidang Akhir.
+B. Bimbingan Revisi
+(Revisi Proposal dan Revisi Sidang Akhir)
+Alur
+1. Sistem menampilkan daftar materi revisi yang berasal dari hasil penilaian penguji.
+2. Mahasiswa memilih materi revisi yang telah diselesaikan.
+3. Mahasiswa mengajukan validasi penyelesaian revisi.
+4. Sistem menyimpan pengajuan dengan status Menunggu Validasi Dosen.
+5. Seluruh materi revisi harus berstatus Valid sebelum mahasiswa dapat mengajukan
+penyelesaian revisi.
+
+7. Memvalidasi Materi Bimbingan
+Aktor
+• Dosen Pembimbing
+• Dosen Penguji (untuk revisi)
+A. Validasi Bimbingan Normal
+Alur
+1. Dosen membuka daftar materi bimbingan yang diajukan.
+2. Dosen memeriksa progres pekerjaan mahasiswa pada Google Docs.
+
+===== PAGE 5 =====
+3. Jika materi sesuai:
+o Dosen menyetujui materi.
+o Status materi menjadi Valid.
+4. Jika materi belum sesuai:
+o Dosen menolak materi.
+o Status materi menjadi Ditolak.
+5. Mahasiswa dapat mengajukan materi bimbingan baru setelah melakukan perbaikan.
+B. Validasi Bimbingan Revisi
+Alur
+1. Dosen memeriksa hasil revisi pada Google Docs.
+2. Jika revisi telah sesuai:
+o Status materi menjadi Valid.
+3. Jika revisi belum sesuai:
+o Status materi menjadi Ditolak.
+4. Mahasiswa dapat mengajukan kembali validasi setelah melakukan perbaikan.
+
+8. Mengajukan Seminar Proposal
+Aktor
+• Mahasiswa
+Prasyarat
+• Tahap aktif mahasiswa adalah Bimbingan Proposal.
+• Memiliki minimal 8 materi bimbingan berstatus Valid.
+Alur
+1. Mahasiswa membuka menu Seminar Proposal.
+2. Sistem memverifikasi bahwa jumlah materi bimbingan valid telah memenuhi syarat.
+3. Mahasiswa menginput:
+o Link Google Drive yang berisi dokumen persyaratan Seminar Proposal.
+o Dokumen Tugas Akhir terbaru hasil bimbingan.
+4. Mahasiswa mengirim pengajuan Seminar Proposal.
+5. Sistem menyimpan pengajuan dengan status Menunggu Validasi Koordinator.
+
+===== PAGE 6 =====
+9. Memvalidasi Seminar Proposal
+Aktor
+• Koordinator TA
+Alur
+1. Koordinator membuka daftar pengajuan Seminar Proposal.
+2. Sistem menampilkan data pengajuan beserta daftar persyaratan Seminar Proposal.
+3. Koordinator memeriksa:
+o Kelengkapan persyaratan Seminar Proposal.
+o Dokumen Tugas Akhir yang diajukan.
+o Progres bimbingan pada Google Docs.
+4. Jika pengajuan belum memenuhi syarat:
+o Koordinator menolak pengajuan.
+o Koordinator mengisi catatan perbaikan.
+o Sistem mengubah status pengajuan menjadi Ditolak.
+5. Jika pengajuan memenuhi syarat:
+o Koordinator menyetujui pengajuan.
+6. Sistem:
+o Menyelesaikan tahap Bimbingan Proposal.
+o Membuat tahap Seminar Proposal sebagai tahap aktif mahasiswa.
+
+10. Mengajukan Sidang Akhir
+Aktor
+• Mahasiswa
+Prasyarat
+• Mahasiswa telah menyelesaikan Seminar Proposal.
+• Tahap aktif mahasiswa adalah Bimbingan Sidang Akhir.
+• Memiliki minimal 8 materi bimbingan berstatus Valid pada tahap Bimbingan Sidang
+Akhir.
+Alur
+1. Mahasiswa membuka menu Sidang Akhir.
+
+===== PAGE 7 =====
+2. Sistem memverifikasi bahwa mahasiswa telah memenuhi seluruh prasyarat pengajuan
+Sidang Akhir.
+3. Mahasiswa menginput:
+o Link Google Drive yang berisi dokumen persyaratan Sidang Akhir.
+o Dokumen Tugas Akhir terbaru hasil bimbingan.
+4. Mahasiswa mengirim pengajuan Sidang Akhir.
+5. Sistem menyimpan pengajuan dengan status Menunggu Validasi Koordinator.
+
+11. Memvalidasi Sidang Akhir
+Aktor
+• Koordinator TA
+Alur
+1. Koordinator membuka daftar pengajuan Sidang Akhir.
+2. Sistem menampilkan data pengajuan beserta daftar persyaratan Sidang Akhir.
+3. Koordinator memeriksa:
+o Kelengkapan persyaratan Sidang Akhir.
+o Dokumen Tugas Akhir yang diajukan.
+o Progres bimbingan pada Google Docs.
+4. Jika pengajuan belum memenuhi syarat:
+o Koordinator menolak pengajuan.
+o Koordinator mengisi catatan perbaikan.
+o Sistem mengubah status pengajuan menjadi Ditolak.
+5. Jika pengajuan memenuhi syarat:
+o Koordinator menyetujui pengajuan.
+6. Sistem:
+o Menyelesaikan tahap Bimbingan Sidang Akhir.
+o Membuat tahap Sidang Akhir sebagai tahap aktif mahasiswa.
+
+12. Mengajukan Penyelesaian Revisi
+Aktor
+• Mahasiswa
+Tahapan
+
+===== PAGE 8 =====
+• Revisi Proposal
+• Revisi Sidang Akhir
+Prasyarat
+• Seluruh materi revisi telah berstatus Valid.
+Alur
+1. Mahasiswa membuka menu Penyelesaian Revisi.
+2. Sistem memverifikasi bahwa seluruh materi revisi telah berstatus Valid.
+3. Mahasiswa mengunggah dokumen Tugas Akhir terbaru yang telah diperbaiki.
+4. Mahasiswa mengirim pengajuan penyelesaian revisi.
+5. Sistem menyimpan pengajuan dengan status Menunggu Validasi Koordinator.
+
+13. Memvalidasi Penyelesaian Revisi
+Aktor
+• Koordinator TA
+Alur
+1. Koordinator membuka daftar pengajuan penyelesaian revisi.
+2. Koordinator memeriksa dokumen hasil revisi yang diajukan mahasiswa.
+3. Jika hasil revisi belum sesuai:
+o Koordinator menolak pengajuan.
+o Koordinator mengisi catatan perbaikan.
+o Sistem mengubah status pengajuan menjadi Ditolak.
+4. Jika hasil revisi telah sesuai:
+o Koordinator menyetujui pengajuan.
+o Tahap revisi dinyatakan selesai.
+5. Sistem melakukan perpindahan tahap sesuai jenis revisi:
+A. Penyelesaian Revisi Proposal
+1. Sistem menyelesaikan tahap Revisi Proposal.
+2. Sistem membuat tahap Bimbingan Sidang Akhir sebagai tahap aktif mahasiswa.
+B. Penyelesaian Revisi Sidang Akhir
+1. Sistem menyelesaikan tahap Revisi Sidang Akhir.
+
+===== PAGE 9 =====
+2. Sistem membuat tahap Selesai (Completed) sebagai tahap aktif mahasiswa.
+3. Status Tugas Akhir dinyatakan selesai.
+
+14. Mengelola Jadwal Seminar Proposal dan Sidang Akhir
+Aktor
+• Koordinator TA
+Prasyarat
+• Pengajuan Seminar Proposal atau Sidang Akhir telah disetujui.
+Alur
+1. Koordinator membuka menu Jadwal.
+2. Sistem menampilkan daftar mahasiswa yang telah lolos validasi Seminar Proposal atau
+Sidang Akhir.
+3. Koordinator memilih mahasiswa yang akan dijadwalkan.
+4. Koordinator menginput:
+o Tanggal pelaksanaan.
+o Waktu pelaksanaan.
+o Ruangan.
+o Penguji 1.
+o Penguji 2.
+o Ketua Sidang.
+5. Sistem melakukan validasi jadwal:
+o Penguji 1 tidak memiliki jadwal lain pada waktu yang sama.
+o Penguji 2 tidak memiliki jadwal lain pada waktu yang sama.
+o Ketua Sidang tidak memiliki jadwal lain pada waktu yang sama.
+o Ruangan tidak digunakan pada waktu yang sama.
+6. Jika terjadi konflik jadwal:
+o Sistem menolak penyimpanan jadwal.
+o Sistem menampilkan informasi konflik yang ditemukan.
+7. Jika jadwal valid:
+o Sistem menyimpan jadwal.
+o Sistem mengirim notifikasi kepada mahasiswa dan dosen yang terlibat.
+o Jadwal dapat dilihat oleh mahasiswa dan dosen.
+Operasi
+• Tambah Jadwal
+
+===== PAGE 10 =====
+• Ubah Jadwal
+• Hapus Jadwal
+
+15. Melihat Jadwal Seminar Proposal dan Sidang Akhir
+Aktor
+• Mahasiswa
+• Dosen
+A. Mahasiswa
+Alur
+1. Mahasiswa membuka menu Jadwal.
+2. Sistem menampilkan jadwal Seminar Proposal atau Sidang Akhir milik mahasiswa.
+3. Mahasiswa dapat melihat:
+o Tanggal pelaksanaan.
+o Waktu pelaksanaan.
+o Ruangan.
+o Penguji 1.
+o Penguji 2.
+o Ketua Sidang.
+B. Dosen
+Alur
+1. Dosen membuka menu Jadwal.
+2. Sistem menampilkan seluruh jadwal yang melibatkan dosen tersebut.
+3. Sistem menampilkan peran dosen pada setiap jadwal:
+o Penguji 1.
+o Penguji 2.
+o Ketua Sidang.
+4. Dosen dapat melihat detail jadwal yang dipilih.
+
+16. Memberikan Penilaian Seminar Proposal dan Sidang Akhir
+Aktor
+
+===== PAGE 11 =====
+• Dosen Penguji
+Alur
+1. Dosen membuka jadwal Seminar Proposal atau Sidang Akhir yang telah dilaksanakan.
+2. Sistem menampilkan form penilaian.
+3. Dosen menginput nilai:
+o Presentasi.
+o Penulisan Tugas Akhir.
+o Tanya Jawab.
+4. Sistem menghitung total nilai sesuai aturan penilaian yang berlaku.
+5. Jika terdapat revisi:
+o Dosen memilih tambah catatan revisi.
+o Dosen menginput topik revisi.
+o Dosen dapat menambahkan lebih dari satu catatan revisi.
+6. Dosen menyimpan penilaian.
+7. Sistem menyimpan:
+o Nilai seminar atau sidang.
+o Daftar catatan revisi.
+8. Jika terdapat catatan revisi:
+o Sistem membuat daftar materi revisi berdasarkan catatan revisi yang diberikan
+penguji.
+o Sistem memindahkan mahasiswa ke tahap Revisi Proposal atau Revisi Sidang
+Akhir sesuai tahapan yang sedang berjalan.
+9. Jika tidak terdapat catatan revisi:
+o Sistem memindahkan mahasiswa ke tahap berikutnya sesuai aturan yang berlaku.
+
+17. Memantau Mahasiswa Bimbingan
+Aktor
+• Dosen Pembimbing
+Alur
+1. Dosen membuka menu Mahasiswa Bimbingan.
+2. Sistem menampilkan daftar mahasiswa yang berada di bawah bimbingan dosen.
+3. Dosen dapat melihat informasi:
+o Tahapan Tugas Akhir saat ini.
+o Jumlah materi bimbingan yang telah divalidasi.
+o Progress penyelesaian revisi.
+o Link Google Docs bimbingan.
+
+===== PAGE 12 =====
+4. Dosen dapat membuka detail progres setiap mahasiswa.
+5. Sistem menampilkan riwayat bimbingan dan status validasi materi bimbingan mahasiswa.
+
+18. Mengelola Program Studi
+Aktor
+• Operator Akademik
+Alur
+1. Admin membuka menu Program Studi.
+2. Sistem menampilkan daftar Program Studi.
+3. Admin dapat:
+o Menambah Program Studi.
+o Mengubah Program Studi.
+o Menonaktifkan Program Studi.
+4. Sistem menyimpan perubahan data.
+
+19. Mengelola Periode Akademik
+Aktor
+• Operator Akademik
+Alur
+1. Admin membuka menu Periode Akademik.
+2. Sistem menampilkan daftar Periode Akademik.
+3. Admin dapat:
+o Menambah Periode Akademik.
+o Mengubah Periode Akademik.
+o Mengaktifkan atau menonaktifkan Periode Akademik.
+4. Sistem menyimpan perubahan data.
+
+===== PAGE 13 =====
+20. Mengelola Item Persyaratan
+Aktor
+• Operator Akademik
+Kategori Persyaratan
+• Pendaftaran Tugas Akhir
+• Seminar Proposal
+• Sidang Akhir
+Alur
+1. Admin membuka menu Persyaratan.
+2. Admin memilih kategori persyaratan.
+3. Sistem menampilkan daftar item persyaratan pada kategori yang dipilih.
+4. Admin dapat:
+o Menambah item persyaratan.
+o Mengubah item persyaratan.
+o Menonaktifkan item persyaratan.
+o Menghapus item persyaratan.
+5. Sistem menyimpan perubahan data.
+
+21. Mengelola Item Skema Tugas Akhir
+Aktor
+• Operator Akademik
+Kategori Skema
+• Skripsi
+• Non Skripsi
+Alur
+1. Admin membuka menu Skema Tugas Akhir.
+2. Admin memilih kategori skema.
+3. Sistem menampilkan daftar item jenis Tugas Akhir pada kategori yang dipilih.
+
+===== PAGE 14 =====
+4. Admin dapat:
+o Menambah item jenis Tugas Akhir.
+o Mengubah item jenis Tugas Akhir.
+o Menonaktifkan item jenis Tugas Akhir.
+o Menghapus item jenis Tugas Akhir.
+5. Sistem menyimpan perubahan data.
+
+22. Mengelola Akun
+Aktor
+• Operator Akademik
+Alur
+1. Admin membuka menu Akun.
+2. Sistem menampilkan daftar akun pengguna.
+3. Admin dapat menambah akun baru.
+4. Admin menginput:
+o Nama lengkap.
+o Username.
+o Program Studi.
+o Role.
+5. Admin dapat memberikan:
+o Satu role.
+o Dua role.
+o Lebih dari dua role.
+6. Admin dapat:
+o Menambah akun.
+o Mengubah akun.
+o Menonaktifkan akun.
+o Menghapus akun.
+7. Sistem menyimpan perubahan data akun.
+
+23. Mengelola Kuota Bimbingan Dosen
+Aktor
+• Operator Akademik
+• Koordinator TA
+
+===== PAGE 15 =====
+Alur
+1. Pengguna membuka menu Kuota Bimbingan Dosen.
+2. Sistem menampilkan daftar dosen beserta kuota bimbingan yang dimiliki.
+3. Pengguna memilih dosen yang akan dikelola.
+4. Pengguna mengubah:
+o Kuota Pembimbing 1.
+o Kuota Pembimbing 2.
+5. Sistem menyimpan perubahan kuota.
+6. Sistem menggunakan kuota tersebut sebagai acuan saat proses penentuan pembimbing
+Tugas Akhir.
+
+24. Melihat Arsip Tugas Akhir
+Aktor
+• Koordinator TA
+• Pimpinan
+Alur
+1. Pengguna membuka menu Arsip Tugas Akhir.
+2. Sistem menampilkan daftar Tugas Akhir yang telah selesai.
+3. Pengguna dapat melakukan pencarian dan penyaringan berdasarkan:
+o Nama Mahasiswa.
+o NIM.
+o Program Studi.
+o Periode Akademik.
+o Judul Tugas Akhir.
+4. Pengguna memilih data Tugas Akhir yang ingin dilihat.
+5. Sistem menampilkan detail arsip Tugas Akhir yang terdiri dari:
+o Data mahasiswa.
+o Judul Tugas Akhir.
+o Program Studi.
+o Periode Akademik.
+o Pembimbing.
+o Penguji.
+o Riwayat tahapan Tugas Akhir.
+o Dokumen akhir Tugas Akhir.
+6. Pengguna dapat melihat informasi arsip Tugas Akhir yang dipilih.
+
+===== PAGE 16 =====
+25. Monitoring Dokumen Tugas Akhir
+Aktor
+• Koordinator TA
+• Pimpinan
+Alur
+1. Pengguna membuka menu Monitoring Dokumen Tugas Akhir.
+2. Sistem menampilkan daftar mahasiswa yang sedang atau telah menjalani proses Tugas
+Akhir.
+3. Pengguna dapat melihat informasi:
+o Status Tugas Akhir.
+o Tahapan Tugas Akhir saat ini.
+o Link Google Docs bimbingan.
+o Jumlah bimbingan yang telah divalidasi.
+o Progress penyelesaian revisi.
+4. Pengguna memilih mahasiswa yang ingin dipantau.
+5. Sistem menampilkan detail perkembangan Tugas Akhir mahasiswa.
+6. Pengguna dapat membuka dokumen Google Docs untuk melakukan monitoring proses
+bimbingan dan revisi.
+
+26. Melihat Laporan Tugas Akhir
+Aktor
+• Pimpinan
+Alur
+1. Pimpinan membuka menu Laporan Tugas Akhir.
+2. Sistem menampilkan filter laporan.
+3. Pimpinan memilih:
+o Periode Akademik.
+o Program Studi (opsional).
+4. Sistem menghasilkan laporan berdasarkan filter yang dipilih.
+5. Sistem menampilkan informasi:
+o Jumlah pendaftar Tugas Akhir.
+o Jumlah Seminar Proposal yang telah dilaksanakan.
+o Jumlah Sidang Akhir yang telah dilaksanakan.
+
+===== PAGE 17 =====
+o Jumlah Tugas Akhir yang telah selesai.
+o Distribusi dosen pembimbing.
+o Distribusi dosen penguji.
+6. Pimpinan dapat melihat ringkasan dan detail laporan yang dihasilkan.
+
+Distribusi Use Case Berdasarkan Aktor
+1. Mahasiswa
+Mahasiswa merupakan pengguna utama yang menjalankan proses Tugas Akhir dari pendaftaran
+hingga penyelesaian.
+Use Case
+1. Login Sistem
+2. Mengajukan Pendaftaran Tugas Akhir
+3. Mengajukan Bimbingan
+4. Mengajukan Materi Bimbingan
+5. Mengajukan Seminar Proposal
+6. Mengajukan Sidang Akhir
+7. Mengajukan Penyelesaian Revisi
+8. Melihat Jadwal Seminar Proposal dan Sidang Akhir
+
+2. Dosen
+Dosen berperan sebagai pembimbing dan penguji dalam proses Tugas Akhir.
+Use Case
+1. Login Sistem
+2. Memvalidasi Pengajuan Bimbingan
+3. Memvalidasi Materi Bimbingan
+4. Melihat Jadwal Seminar Proposal dan Sidang Akhir
+5. Memberikan Penilaian Seminar Proposal dan Sidang Akhir
+6. Memantau Mahasiswa Bimbingan
+
+3. Koordinator TA
+
+===== PAGE 18 =====
+Koordinator TA bertanggung jawab terhadap validasi proses akademik dan pengelolaan
+pelaksanaan Tugas Akhir.
+Use Case
+1. Login Sistem
+2. Memvalidasi Pendaftaran Tugas Akhir
+3. Memvalidasi Seminar Proposal
+4. Memvalidasi Sidang Akhir
+5. Memvalidasi Penyelesaian Revisi
+6. Mengelola Jadwal Seminar Proposal dan Sidang Akhir
+7. Mengelola Kuota Bimbingan Dosen
+8. Melihat Arsip Tugas Akhir
+9. Monitoring Dokumen Tugas Akhir
+
+4. Operator Akademik
+Operator Akademik bertanggung jawab mengelola data master yang digunakan oleh sistem.
+Use Case
+1. Login Sistem
+2. Mengelola Program Studi
+3. Mengelola Periode Akademik
+4. Mengelola Item Persyaratan
+5. Mengelola Item Skema Tugas Akhir
+6. Mengelola Akun
+7. Mengelola Kuota Bimbingan Dosen
+
+5. Pimpinan
+Pimpinan berperan dalam melakukan monitoring dan evaluasi pelaksanaan Tugas Akhir.
+Use Case
+1. Login Sistem
+2. Melihat Arsip Tugas Akhir
+3. Monitoring Dokumen Tugas Akhir
+4. Melihat Laporan Tugas Akhir
+
+===== PAGE 19 =====
+Rekapitulasi Use Case
+Mahasiswa
+• 8 Use Case
+Dosen
+• 6 Use Case
+Koordinator TA
+• 9 Use Case
+Operator Akademik
+• 7 Use Case
+Pimpinan
+• 4 Use Case
+Total Use Case Sistem
+26 Use Case

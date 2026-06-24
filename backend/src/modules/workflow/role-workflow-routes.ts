@@ -1,10 +1,13 @@
 import crypto from "node:crypto";
 import type {
+  CoordinatorLifecycleStageCode,
   ExamStage,
   GuidanceStage,
   RevisionStage,
+  SortDirection,
   StepId,
   StepStatus,
+  StudentDirectorySortBy,
   SupervisorAssignment,
   UserAccount,
 } from "../../domain/types";
@@ -44,6 +47,95 @@ const readExamStage = (stageId: string) => stageId as ExamStage;
 const readRevisionStage = (stageId: string) => stageId as RevisionStage;
 const readStepId = (stepId: string) => stepId as StepId;
 const resourceId = (studentId: string, itemId: string) => `${studentId}:${itemId}`;
+const coordinatorLifecycleStageCodes = new Set<CoordinatorLifecycleStageCode>([
+  "UNREGISTERED",
+  "PROPOSAL_GUIDANCE",
+  "PROPOSAL_SEMINAR",
+  "PROPOSAL_REVISION",
+  "FINAL_GUIDANCE",
+  "FINAL_DEFENSE",
+  "FINAL_REVISION",
+  "COMPLETED",
+]);
+
+const readCoordinatorLifecycleStageCode = (
+  value: string | null
+): CoordinatorLifecycleStageCode | null => {
+  if (!value) {
+    return null;
+  }
+
+  if (coordinatorLifecycleStageCodes.has(value as CoordinatorLifecycleStageCode)) {
+    return value as CoordinatorLifecycleStageCode;
+  }
+
+  throw validationError("Payload tidak valid.", {
+    "query.stage": [
+      "Stage harus salah satu dari UNREGISTERED, PROPOSAL_GUIDANCE, PROPOSAL_SEMINAR, PROPOSAL_REVISION, FINAL_GUIDANCE, FINAL_DEFENSE, FINAL_REVISION, atau COMPLETED.",
+    ],
+  });
+};
+
+const readPositiveIntegerQuery = (
+  query: URLSearchParams,
+  key: string,
+  fallback: number,
+  max: number
+) => {
+  const raw = query.get(key);
+  if (!raw) {
+    return fallback;
+  }
+
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw validationError("Payload tidak valid.", {
+      [`query.${key}`]: [`${key} harus berupa angka positif.`],
+    });
+  }
+
+  return Math.min(value, max);
+};
+
+const readSearchQuery = (query: URLSearchParams) => {
+  const value = query.get("q")?.trim() || "";
+  return value.length > 0 ? value.slice(0, 120) : null;
+};
+
+const studentDirectorySortFields = new Set<StudentDirectorySortBy>([
+  "name",
+  "nim",
+  "stage",
+  "supervisor1",
+]);
+
+const readStudentDirectorySortBy = (value: string | null): StudentDirectorySortBy => {
+  if (!value) {
+    return "name";
+  }
+
+  if (studentDirectorySortFields.has(value as StudentDirectorySortBy)) {
+    return value as StudentDirectorySortBy;
+  }
+
+  throw validationError("Payload tidak valid.", {
+    "query.sortBy": ["sortBy harus salah satu dari name, nim, stage, atau supervisor1."],
+  });
+};
+
+const readSortDirection = (value: string | null): SortDirection => {
+  if (!value) {
+    return "asc";
+  }
+
+  if (value === "asc" || value === "desc") {
+    return value;
+  }
+
+  throw validationError("Payload tidak valid.", {
+    "query.sortDir": ["sortDir harus asc atau desc."],
+  });
+};
 
 const ensureLecturer = async (userId: string, path: string) => {
   const user = await userRepository.findById(userId);
@@ -97,9 +189,10 @@ const coordinatorReadPermissions = [
 export const registerRoleWorkflowRoutes = (router: Router) => {
   router.get("/lecturer/students", async ({ headers }) => {
     const actor = await authService.requireAnyPermission(headers, lecturerReadPermissions);
+    const result = await userRepository.listStudentDirectory({ lecturerId: actor.id });
     return json({
-      data: await userRepository.listStudentDirectory({ lecturerId: actor.id }),
-      meta: { scope: "lecturer", lecturerId: actor.id },
+      data: result.data,
+      meta: { ...result.meta, scope: "lecturer", lecturerId: actor.id },
     });
   });
 
@@ -390,11 +483,45 @@ const registerCoordinatorWorkflowRoutes = (router: Router, prefix: string) => {
     return json({ data: after, meta: { lecturerId: params.lecturerId } });
   });
 
-  router.get(`${prefix}/students`, async ({ headers }) => {
+  router.get(`${prefix}/students`, async ({ headers, query }) => {
     await authService.requireAnyPermission(headers, coordinatorReadPermissions);
+    const stage = readCoordinatorLifecycleStageCode(query.get("stage"));
+    const page = readPositiveIntegerQuery(query, "page", 1, 100000);
+    const limit = readPositiveIntegerQuery(query, "limit", 20, 100);
+    const q = readSearchQuery(query);
+    const sortBy = readStudentDirectorySortBy(query.get("sortBy"));
+    const sortDir = readSortDirection(query.get("sortDir"));
+    const result = await userRepository.listStudentDirectory({
+      stage,
+      q,
+      page,
+      limit,
+      sortBy,
+      sortDir,
+    });
     return json({
-      data: await userRepository.listStudentDirectory(),
-      meta: { scope: prefix.replace("/", "") },
+      data: result.data,
+      meta: {
+        ...result.meta,
+        scope: prefix.replace("/", ""),
+        stage,
+        q,
+      },
+    });
+  });
+
+  router.get(`${prefix}/reports/lifecycle-summary`, async ({ headers }) => {
+    await authService.requireAnyPermission(headers, [
+      "coordinator.monitoring.read",
+      "coordinator.workflow.read",
+      "workflow.override",
+    ]);
+    return json({
+      data: await userRepository.listCoordinatorLifecycleSummary(),
+      meta: {
+        scope: prefix.replace("/", ""),
+        source: "canonical_coordinator_reporting_summary",
+      },
     });
   });
 

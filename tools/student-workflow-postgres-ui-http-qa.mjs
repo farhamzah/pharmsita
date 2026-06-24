@@ -43,6 +43,8 @@ const sqlFiles = [
   path.join(rootDir, "backend", "database", "migrations", "006_audit_export_guard.sql"),
   path.join(rootDir, "backend", "database", "migrations", "007_user_profile_contact.sql"),
   path.join(rootDir, "backend", "database", "migrations", "008_role_profile_fields.sql"),
+  path.join(rootDir, "backend", "database", "migrations", "009_canonical_pharmsita_schema_boundary.sql"),
+  path.join(rootDir, "backend", "database", "migrations", "010_canonical_read_models.sql"),
   path.join(rootDir, "backend", "database", "seeds", "001_demo_auth.sql"),
   path.join(rootDir, "backend", "database", "seeds", "002_demo_master_data.sql"),
 ];
@@ -127,8 +129,78 @@ const applySqlFiles = async () => {
       addCheck(`Apply ${path.relative(rootDir, file)}`, true);
     }
 
+    await pool.query(
+      `
+        DELETE FROM guidance_materials
+        WHERE submitted_by = $1
+           OR guidance_workflow_id IN (
+             SELECT id FROM guidance_workflows WHERE student_id = $1
+           )
+           OR guidance_request_id IN (
+             SELECT id FROM guidance_requests WHERE submitted_by = $1
+           )
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM guidance_requests
+        WHERE submitted_by = $1
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM stage_submission_requirement_validations
+        WHERE stage_submission_id IN (
+          SELECT id FROM stage_submissions WHERE student_id = $1
+        )
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM thesis_assessments
+        WHERE schedule_id IN (
+          SELECT id FROM thesis_schedules WHERE student_id = $1
+        )
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM thesis_schedules
+        WHERE student_id = $1
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM revision_notes
+        WHERE thesis_id IN (
+          SELECT id FROM theses WHERE student_id = $1
+        )
+           OR legacy_revision_item_id IN (
+             SELECT item.id
+             FROM revision_items item
+             JOIN revision_workflows workflow
+               ON workflow.id = item.revision_workflow_id
+             WHERE workflow.student_id = $1
+           )
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM stage_submissions
+        WHERE student_id = $1
+      `,
+      [demoIds.student]
+    );
+
     for (const table of [
       "audit_export_attempts",
+      "thesis_registrations",
       "final_project_registrations",
       "student_progress_steps",
       "student_requirement_bundles",

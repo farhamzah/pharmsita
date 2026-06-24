@@ -38,6 +38,8 @@ const sqlFiles = [
   path.join(rootDir, "backend", "database", "migrations", "006_audit_export_guard.sql"),
   path.join(rootDir, "backend", "database", "migrations", "007_user_profile_contact.sql"),
   path.join(rootDir, "backend", "database", "migrations", "008_role_profile_fields.sql"),
+  path.join(rootDir, "backend", "database", "migrations", "009_canonical_pharmsita_schema_boundary.sql"),
+  path.join(rootDir, "backend", "database", "migrations", "010_canonical_read_models.sql"),
   path.join(rootDir, "backend", "database", "seeds", "001_demo_auth.sql"),
   path.join(rootDir, "backend", "database", "seeds", "002_demo_master_data.sql"),
 ];
@@ -171,6 +173,81 @@ const applySqlFiles = async () => {
     );
     await pool.query(
       `
+        DELETE FROM guidance_materials
+        WHERE submitted_by = $1
+           OR guidance_workflow_id IN (
+             SELECT id FROM guidance_workflows WHERE student_id = $1
+           )
+           OR guidance_request_id IN (
+             SELECT id FROM guidance_requests WHERE submitted_by = $1
+           )
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM guidance_requests
+        WHERE submitted_by = $1
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM stage_submission_requirement_validations
+        WHERE stage_submission_id IN (
+          SELECT id FROM stage_submissions WHERE student_id = $1
+        )
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM thesis_assessments
+        WHERE schedule_id IN (
+          SELECT id FROM thesis_schedules WHERE student_id = $1
+        )
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM thesis_schedules
+        WHERE student_id = $1
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM revision_notes
+        WHERE thesis_id IN (
+          SELECT id FROM theses WHERE student_id = $1
+        )
+           OR legacy_revision_item_id IN (
+             SELECT item.id
+             FROM revision_items item
+             JOIN revision_workflows workflow
+               ON workflow.id = item.revision_workflow_id
+             WHERE workflow.student_id = $1
+           )
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM stage_submissions
+        WHERE student_id = $1
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
+        DELETE FROM thesis_registrations
+        WHERE student_id = $1
+      `,
+      [demoIds.student]
+    );
+    await pool.query(
+      `
         DELETE FROM final_project_registrations
         WHERE student_id = $1
       `,
@@ -219,6 +296,183 @@ const applySqlFiles = async () => {
       [demoIds.student]
     );
     addResult("Reset demo final project data", "reset", "reset", true);
+  } finally {
+    await pool.end();
+  }
+};
+
+const readCanonicalExamStageBoundary = async (stageCode, revisionStageCode) => {
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    ssl: databaseSsl ? { rejectUnauthorized: false } : undefined,
+  });
+
+  try {
+    const result = await pool.query(
+      `
+        SELECT
+          submission.status AS submission_status,
+          schedule.room AS schedule_room,
+          COUNT(DISTINCT assessment.id)::int AS assessment_count,
+          COUNT(DISTINCT revision_note.id)::int AS revision_note_count
+        FROM stage_submissions submission
+        JOIN thesis_stages stage
+          ON stage.id = submission.thesis_stage_id
+        LEFT JOIN thesis_schedules schedule
+          ON schedule.student_id = submission.student_id
+          AND schedule.thesis_stage_id = submission.thesis_stage_id
+        LEFT JOIN thesis_assessments assessment
+          ON assessment.schedule_id = schedule.id
+        LEFT JOIN thesis_stages revision_stage
+          ON revision_stage.code = $3
+        LEFT JOIN revision_notes revision_note
+          ON revision_note.thesis_id = submission.thesis_id
+          AND revision_note.thesis_stage_id = revision_stage.id
+          AND revision_note.legacy_revision_item_id IS NULL
+        WHERE submission.student_id = $1
+          AND stage.code = $2
+        GROUP BY submission.status, schedule.room
+        LIMIT 1
+      `,
+      [demoIds.student, stageCode, revisionStageCode]
+    );
+
+    return result.rows[0] || null;
+  } finally {
+    await pool.end();
+  }
+};
+
+const readCanonicalRevisionStageBoundary = async (stageCode) => {
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    ssl: databaseSsl ? { rejectUnauthorized: false } : undefined,
+  });
+
+  try {
+    const result = await pool.query(
+      `
+        SELECT
+          submission.status AS submission_status,
+          submission.latest_document_file,
+          COUNT(DISTINCT revision_note.id)::int AS revision_note_count,
+          COUNT(DISTINCT material.id) FILTER (
+            WHERE material.revision_note_id IS NOT NULL
+          )::int AS bridged_material_count
+        FROM stage_submissions submission
+        JOIN thesis_stages stage
+          ON stage.id = submission.thesis_stage_id
+        LEFT JOIN revision_notes revision_note
+          ON revision_note.thesis_id = submission.thesis_id
+          AND revision_note.thesis_stage_id = submission.thesis_stage_id
+        LEFT JOIN guidance_materials material
+          ON material.revision_note_id = revision_note.id
+        WHERE submission.student_id = $1
+          AND stage.code = $2
+        GROUP BY submission.status, submission.latest_document_file
+        LIMIT 1
+      `,
+      [demoIds.student, stageCode]
+    );
+
+    return result.rows[0] || null;
+  } finally {
+    await pool.end();
+  }
+};
+
+const readCanonicalGuidanceBoundary = async (guidanceRequestId, materialId = null) => {
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    ssl: databaseSsl ? { rejectUnauthorized: false } : undefined,
+  });
+
+  try {
+    const requestResult = await pool.query(
+      `
+        SELECT
+          request.status,
+          request.document_link,
+          request.submitted_by,
+          request.approved_by,
+          stage.code AS stage_code,
+          thesis.id AS thesis_id
+        FROM guidance_requests request
+        JOIN thesis_stages stage
+          ON stage.id = request.thesis_stage_id
+        LEFT JOIN theses thesis
+          ON thesis.id = request.thesis_id
+        WHERE request.id = $1
+        LIMIT 1
+      `,
+      [guidanceRequestId]
+    );
+
+    let material = null;
+    if (materialId) {
+      const materialResult = await pool.query(
+        `
+          SELECT
+            guidance_request_id,
+            submitted_by,
+            title,
+            canonical_status,
+            revision_note_id
+          FROM guidance_materials
+          WHERE id = $1
+          LIMIT 1
+        `,
+        [materialId]
+      );
+      material = materialResult.rows[0] || null;
+    }
+
+    return {
+      request: requestResult.rows[0] || null,
+      material,
+    };
+  } finally {
+    await pool.end();
+  }
+};
+
+const readCanonicalFinalProjectLifecycle = async (registrationId) => {
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    ssl: databaseSsl ? { rejectUnauthorized: false } : undefined,
+  });
+
+  try {
+    const result = await pool.query(
+      `
+        SELECT
+          tr.status AS registration_status,
+          thesis.id AS thesis_id,
+          thesis.status AS thesis_status,
+          stage.code AS current_stage_code,
+          COUNT(DISTINCT committee.id)::int AS committee_count,
+          COUNT(DISTINCT history.id) FILTER (
+            WHERE history.finished_at IS NULL
+          )::int AS active_stage_history_count,
+          COUNT(DISTINCT history.id) FILTER (
+            WHERE history.status = 'COMPLETED'
+          )::int AS completed_stage_history_count
+        FROM thesis_registrations tr
+        LEFT JOIN theses thesis
+          ON thesis.registration_id = tr.id
+        LEFT JOIN thesis_stages stage
+          ON stage.id = thesis.current_stage_id
+        LEFT JOIN thesis_committees committee
+          ON committee.thesis_id = thesis.id
+        LEFT JOIN thesis_stage_histories history
+          ON history.thesis_id = thesis.id
+        WHERE tr.id = $1
+        GROUP BY tr.status, thesis.id, thesis.status, stage.code
+      `,
+      [registrationId]
+    );
+
+    return result.rows[0] || null;
   } finally {
     await pool.end();
   }
@@ -959,6 +1213,19 @@ const main = async () => {
       `status=${coordinatorExam.payload?.data?.status || "-"}; schedule=${coordinatorExam.payload?.data?.schedule?.waktu || "-"}`
     );
 
+    const canonicalExamBoundary = await readCanonicalExamStageBoundary(
+      "FINAL_DEFENSE",
+      "FINAL_REVISION"
+    );
+    assertPass(
+      "Canonical exam stage, schedule, assessment, and revision note synced",
+      canonicalExamBoundary?.submission_status === "COMPLETED" &&
+        canonicalExamBoundary?.schedule_room === "Ruang Seminar A" &&
+        Number(canonicalExamBoundary?.assessment_count || 0) >= 2 &&
+        Number(canonicalExamBoundary?.revision_note_count || 0) >= 2,
+      `stage=${canonicalExamBoundary?.submission_status || "-"}; room=${canonicalExamBoundary?.schedule_room || "-"}; assessments=${canonicalExamBoundary?.assessment_count || 0}; notes=${canonicalExamBoundary?.revision_note_count || 0}`
+    );
+
     const lecturerRevision = await addCheck(
       "Lecturer get PostgreSQL revision",
       "GET",
@@ -1208,6 +1475,16 @@ const main = async () => {
       `file=${coordinatorRevision.payload?.data?.finalFile || "-"}; chair=${coordinatorRevision.payload?.data?.ketuaSidangStatus || "-"}`
     );
 
+    const canonicalRevisionBoundary = await readCanonicalRevisionStageBoundary("FINAL_REVISION");
+    assertPass(
+      "Canonical revision stage, notes, and material bridge synced",
+      canonicalRevisionBoundary?.submission_status === "APPROVED" &&
+        canonicalRevisionBoundary?.latest_document_file === "task48-final-revisi.pdf" &&
+        Number(canonicalRevisionBoundary?.revision_note_count || 0) >= 2 &&
+        Number(canonicalRevisionBoundary?.bridged_material_count || 0) >= 1,
+      `stage=${canonicalRevisionBoundary?.submission_status || "-"}; file=${canonicalRevisionBoundary?.latest_document_file || "-"}; notes=${canonicalRevisionBoundary?.revision_note_count || 0}; bridged=${canonicalRevisionBoundary?.bridged_material_count || 0}`
+    );
+
     const coordinatorReadyGate = await addCheck(
       "Coordinator read ready PostgreSQL revision completion gate",
       "GET",
@@ -1328,6 +1605,138 @@ const main = async () => {
       `assignments=${approved.payload?.data?.supervisorAssignments?.length || 0}`
     );
 
+    const canonicalLifecycle = await readCanonicalFinalProjectLifecycle(registrationId);
+    assertPass(
+      "Canonical thesis lifecycle created",
+      canonicalLifecycle?.registration_status === "APPROVED" &&
+        canonicalLifecycle?.thesis_status === "ACTIVE" &&
+        canonicalLifecycle?.current_stage_code === "PROPOSAL_GUIDANCE" &&
+        canonicalLifecycle?.committee_count === 2 &&
+        canonicalLifecycle?.active_stage_history_count === 1,
+      canonicalLifecycle
+        ? `registration=${canonicalLifecycle.registration_status}; thesis=${canonicalLifecycle.thesis_status}; stage=${canonicalLifecycle.current_stage_code}; committees=${canonicalLifecycle.committee_count}; histories=${canonicalLifecycle.active_stage_history_count}`
+        : "-"
+    );
+
+    const canonicalDirectoryAfterApproval = await addCheck(
+      "Coordinator student directory reads canonical lifecycle",
+      "GET",
+      "/coordinator/students",
+      { token: coordinatorToken }
+    );
+    const canonicalDirectoryStudent = canonicalDirectoryAfterApproval.payload?.data?.find(
+      (item) => item.id === demoIds.student
+    );
+    assertPass(
+      "Canonical student directory exposes thesis and supervisors",
+      canonicalDirectoryStudent?.thesisTitle ===
+        "PostgreSQL Smoke Formulasi Gel Ekstrak Daun Sirih" &&
+        canonicalDirectoryStudent?.supervisor1Id === demoIds.lecturer1 &&
+        canonicalDirectoryStudent?.supervisor2Id === demoIds.lecturer2,
+      canonicalDirectoryStudent
+        ? `title=${canonicalDirectoryStudent.thesisTitle}; p1=${canonicalDirectoryStudent.supervisor1Id}; p2=${canonicalDirectoryStudent.supervisor2Id}; step=${canonicalDirectoryStudent.activeStepId}`
+        : "-"
+    );
+
+    const completedGuidanceProgress = await addCheck(
+      "Coordinator complete PostgreSQL guidance progress for canonical stage advance",
+      "PATCH",
+      `/coordinator/students/${demoIds.student}/progress/bimbingan-pra-proposal`,
+      {
+        token: coordinatorToken,
+        body: { status: "completed" },
+      }
+    );
+    const completedGuidanceProgressStep = completedGuidanceProgress.payload?.data?.find(
+      (step) => step.id === "bimbingan-pra-proposal"
+    );
+    assertPass(
+      "Guidance progress completion persisted",
+      completedGuidanceProgressStep?.status === "completed" &&
+        completedGuidanceProgress.payload?.data?.find((step) => step.id === "sidang-proposal")
+          ?.status === "active",
+      `guidance=${completedGuidanceProgressStep?.status || "-"}`
+    );
+
+    const canonicalLifecycleAfterProgress =
+      await readCanonicalFinalProjectLifecycle(registrationId);
+    assertPass(
+      "Canonical thesis stage advanced from progress",
+      canonicalLifecycleAfterProgress?.thesis_status === "IN_PROGRESS" &&
+        canonicalLifecycleAfterProgress?.current_stage_code === "PROPOSAL_SEMINAR" &&
+        Number(canonicalLifecycleAfterProgress?.completed_stage_history_count || 0) >= 1 &&
+        Number(canonicalLifecycleAfterProgress?.active_stage_history_count || 0) === 1,
+      canonicalLifecycleAfterProgress
+        ? `thesis=${canonicalLifecycleAfterProgress.thesis_status}; stage=${canonicalLifecycleAfterProgress.current_stage_code}; completedHistories=${canonicalLifecycleAfterProgress.completed_stage_history_count || 0}; activeHistories=${canonicalLifecycleAfterProgress.active_stage_history_count || 0}`
+        : "-"
+    );
+
+    const coordinatorLifecycleSummary = await addCheck(
+      "Coordinator get canonical lifecycle summary",
+      "GET",
+      "/coordinator/reports/lifecycle-summary",
+      { token: coordinatorToken }
+    );
+    const proposalSeminarSummary = coordinatorLifecycleSummary.payload?.data?.find(
+      (item) => item.stageCode === "PROPOSAL_SEMINAR"
+    );
+    assertPass(
+      "Coordinator lifecycle summary reads canonical reporting view",
+      proposalSeminarSummary?.studentCount >= 1 &&
+        coordinatorLifecycleSummary.payload?.meta?.source ===
+          "canonical_coordinator_reporting_summary",
+      proposalSeminarSummary
+        ? `stage=${proposalSeminarSummary.stageCode}; students=${proposalSeminarSummary.studentCount}; source=${coordinatorLifecycleSummary.payload?.meta?.source || "-"}`
+        : "-"
+    );
+
+    const coordinatorStageFilteredDirectory = await addCheck(
+      "Coordinator student directory filters canonical lifecycle stage",
+      "GET",
+      "/coordinator/students?stage=PROPOSAL_SEMINAR",
+      { token: coordinatorToken }
+    );
+    assertPass(
+      "Coordinator stage filter returns proposal seminar student",
+      coordinatorStageFilteredDirectory.payload?.meta?.stage === "PROPOSAL_SEMINAR" &&
+        coordinatorStageFilteredDirectory.payload?.data?.some(
+          (item) => item.id === demoIds.student && item.activeStepId === "sidang-proposal"
+        ),
+      `stage=${coordinatorStageFilteredDirectory.payload?.meta?.stage || "-"}; items=${coordinatorStageFilteredDirectory.payload?.data?.length || 0}`
+    );
+
+    const coordinatorPagedDirectory = await addCheck(
+      "Coordinator student directory supports search and pagination",
+      "GET",
+      "/coordinator/students?stage=PROPOSAL_SEMINAR&q=PostgreSQL&page=1&limit=1",
+      { token: coordinatorToken }
+    );
+    assertPass(
+      "Coordinator directory pagination metadata is returned",
+      coordinatorPagedDirectory.payload?.meta?.stage === "PROPOSAL_SEMINAR" &&
+        coordinatorPagedDirectory.payload?.meta?.q === "PostgreSQL" &&
+        coordinatorPagedDirectory.payload?.meta?.page === 1 &&
+        coordinatorPagedDirectory.payload?.meta?.limit === 1 &&
+        coordinatorPagedDirectory.payload?.meta?.total >= 1 &&
+        coordinatorPagedDirectory.payload?.data?.length <= 1,
+      `page=${coordinatorPagedDirectory.payload?.meta?.page || "-"}; limit=${coordinatorPagedDirectory.payload?.meta?.limit || "-"}; total=${coordinatorPagedDirectory.payload?.meta?.total || 0}; items=${coordinatorPagedDirectory.payload?.data?.length || 0}`
+    );
+
+    const coordinatorSortedDirectory = await addCheck(
+      "Coordinator student directory supports sorting contract",
+      "GET",
+      "/coordinator/students?sortBy=nim&sortDir=desc&page=1&limit=2",
+      { token: coordinatorToken }
+    );
+    assertPass(
+      "Coordinator directory sorting metadata is returned",
+      coordinatorSortedDirectory.payload?.meta?.sortBy === "nim" &&
+        coordinatorSortedDirectory.payload?.meta?.sortDir === "desc" &&
+        coordinatorSortedDirectory.payload?.meta?.page === 1 &&
+        coordinatorSortedDirectory.payload?.data?.length <= 2,
+      `sort=${coordinatorSortedDirectory.payload?.meta?.sortBy || "-"}:${coordinatorSortedDirectory.payload?.meta?.sortDir || "-"}; items=${coordinatorSortedDirectory.payload?.data?.length || 0}`
+    );
+
     const guidanceRequest = await addCheck(
       "Student submit guidance request aggregate",
       "POST",
@@ -1384,6 +1793,20 @@ const main = async () => {
         guidanceValidation.payload?.data?.lecturerNote ===
           "Task 56 request approved.",
       guidanceValidation.payload?.data?.status || "-"
+    );
+
+    const canonicalGuidanceAfterApproval =
+      await readCanonicalGuidanceBoundary(guidanceRequestId);
+    assertPass(
+      "Canonical guidance request approved",
+      canonicalGuidanceAfterApproval.request?.status === "APPROVED" &&
+        canonicalGuidanceAfterApproval.request?.stage_code === "PROPOSAL_GUIDANCE" &&
+        canonicalGuidanceAfterApproval.request?.submitted_by === demoIds.student &&
+        canonicalGuidanceAfterApproval.request?.approved_by === demoIds.lecturer1 &&
+        Boolean(canonicalGuidanceAfterApproval.request?.thesis_id),
+      canonicalGuidanceAfterApproval.request
+        ? `status=${canonicalGuidanceAfterApproval.request.status}; stage=${canonicalGuidanceAfterApproval.request.stage_code}; thesis=${canonicalGuidanceAfterApproval.request.thesis_id || "-"}`
+        : "-"
     );
 
     const guidanceMaterial = await addCheck(
@@ -1446,6 +1869,19 @@ const main = async () => {
       guidanceMaterialValidation.payload?.data?.status || "-"
     );
 
+    const canonicalGuidanceAfterMaterial =
+      await readCanonicalGuidanceBoundary(guidanceRequestId, guidanceMaterialId);
+    assertPass(
+      "Canonical guidance material valid",
+      canonicalGuidanceAfterMaterial.material?.guidance_request_id === guidanceRequestId &&
+        canonicalGuidanceAfterMaterial.material?.submitted_by === demoIds.student &&
+        canonicalGuidanceAfterMaterial.material?.title === "Task 56 Materi Bimbingan 1" &&
+        canonicalGuidanceAfterMaterial.material?.canonical_status === "VALID",
+      canonicalGuidanceAfterMaterial.material
+        ? `request=${canonicalGuidanceAfterMaterial.material.guidance_request_id}; status=${canonicalGuidanceAfterMaterial.material.canonical_status}; title=${canonicalGuidanceAfterMaterial.material.title}`
+        : "-"
+    );
+
     const guidanceDetail = await addCheck(
       "Student get guidance request aggregate detail",
       "GET",
@@ -1487,9 +1923,11 @@ const main = async () => {
         (item) =>
           item.id === demoIds.lecturer1 &&
           item.nidn === "221011401065" &&
-          typeof item.p1Active === "number"
+          item.p1Active >= 1
       ) &&
-        coordinatorLecturers.payload?.data?.some((item) => item.id === demoIds.lecturer2),
+        coordinatorLecturers.payload?.data?.some(
+          (item) => item.id === demoIds.lecturer2 && item.p2Active >= 1
+        ),
       `items=${coordinatorLecturers.payload?.data?.length || 0}`
     );
 

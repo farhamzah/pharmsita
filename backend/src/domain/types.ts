@@ -281,6 +281,19 @@ export interface StudentDirectoryItem {
   supervisorRole?: "pembimbing-1" | "pembimbing-2" | null;
 }
 
+export type CoordinatorLifecycleStageCode =
+  | "UNREGISTERED"
+  | "PROPOSAL_GUIDANCE"
+  | "PROPOSAL_SEMINAR"
+  | "PROPOSAL_REVISION"
+  | "FINAL_GUIDANCE"
+  | "FINAL_DEFENSE"
+  | "FINAL_REVISION"
+  | "COMPLETED";
+
+export type StudentDirectorySortBy = "name" | "nim" | "stage" | "supervisor1";
+export type SortDirection = "asc" | "desc";
+
 export interface LecturerDirectoryItem {
   id: string;
   name: string;
@@ -295,6 +308,15 @@ export interface LecturerDirectoryItem {
   p1Active: number;
   p2Active: number;
   completedCount: number;
+}
+
+export interface CoordinatorLifecycleSummaryItem {
+  stageCode: string;
+  stageName: string;
+  lifecycleStatus: string;
+  studentCount: number;
+  activeThesisCount: number;
+  completedThesisCount: number;
 }
 
 export type GuidanceStage = "bimbingan-pra-proposal" | "bimbingan-pra-sidang";

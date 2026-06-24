@@ -1,9 +1,13 @@
 import type { PostgresQueryExecutor } from "../../database/postgres/connection";
 import type {
+  CoordinatorLifecycleSummaryItem,
+  CoordinatorLifecycleStageCode,
   LecturerDirectoryItem,
+  SortDirection,
   StepId,
   StepStatus,
   StudentDirectoryItem,
+  StudentDirectorySortBy,
   UserAccount,
   UserRecord,
   UserRole,
@@ -98,61 +102,29 @@ export class PostgresUserRepository implements UserRepository {
       status: "Aktif" | "Nonaktif";
       nidn: string | null;
       expertise: string | null;
+      program_studi: string | null;
+      jabatan: string | null;
       quota_limit: number;
       p1_active: string | number | null;
       p2_active: string | number | null;
       completed_count: string | number | null;
     }>(`
       SELECT
-        u.id::TEXT AS id,
-        u.identifier,
-        u.name,
-        u.email,
-        u.status,
-        lp.nidn,
-        lp.expertise,
-        COALESCE(lp.quota_limit, 0) AS quota_limit,
-        COUNT(sa.id) FILTER (
-          WHERE sa.supervisor_order = 1
-            AND sa.status = 'Aktif'
-            AND fpr.status = 'Disetujui'
-        )::TEXT AS p1_active,
-        COUNT(sa.id) FILTER (
-          WHERE sa.supervisor_order = 2
-            AND sa.status = 'Aktif'
-            AND fpr.status = 'Disetujui'
-        )::TEXT AS p2_active,
-        COUNT(DISTINCT fpr.student_id) FILTER (
-          WHERE fpr.status = 'Disetujui'
-        )::TEXT AS completed_count
-      FROM users u
-      LEFT JOIN lecturer_profiles lp
-        ON lp.user_id = u.id
-      LEFT JOIN supervisor_assignments sa
-        ON sa.lecturer_id = u.id
-      LEFT JOIN final_project_registrations fpr
-        ON fpr.id = sa.registration_id
-      WHERE u.status = 'Aktif'
-        AND (
-          u.role = 'dosen'
-          OR EXISTS (
-            SELECT 1
-            FROM user_roles ur
-            WHERE ur.user_id = u.id
-              AND ur.role = 'dosen'
-              AND ur.status = 'Aktif'
-          )
-        )
-      GROUP BY
-        u.id,
-        u.identifier,
-        u.name,
-        u.email,
-        u.status,
-        lp.nidn,
-        lp.expertise,
-        lp.quota_limit
-      ORDER BY u.name ASC
+        summary.lecturer_id::TEXT AS id,
+        summary.identifier,
+        summary.lecturer_name AS name,
+        summary.email,
+        summary.lecturer_status AS status,
+        summary.nidn,
+        summary.expertise,
+        summary.program_studi,
+        summary.jabatan,
+        GREATEST(summary.supervisor_1_quota, summary.supervisor_2_quota) AS quota_limit,
+        summary.p1_active::TEXT AS p1_active,
+        summary.p2_active::TEXT AS p2_active,
+        summary.completed_count::TEXT AS completed_count
+      FROM canonical_lecturer_monitoring_summary summary
+      ORDER BY summary.lecturer_name ASC
     `);
 
     return result.rows.map((row): LecturerDirectoryItem => ({
@@ -163,8 +135,8 @@ export class PostgresUserRepository implements UserRepository {
       status: row.status,
       nidn: row.nidn || row.identifier,
       expertise: row.expertise || undefined,
-      programStudi: "S1 Farmasi",
-      jabatan: row.expertise ? `Dosen ${row.expertise}` : "Dosen Pembimbing",
+      programStudi: row.program_studi || "S1 Farmasi",
+      jabatan: row.jabatan || (row.expertise ? `Dosen ${row.expertise}` : "Dosen Pembimbing"),
       quotaLimit: Number(row.quota_limit || 0),
       p1Active: Number(row.p1_active || 0),
       p2Active: Number(row.p2_active || 0),
@@ -186,6 +158,23 @@ export class PostgresUserRepository implements UserRepository {
       `,
       [lecturerId, input.quotaLimit, input.timestamp]
     );
+    await this.db.query(
+      `
+        INSERT INTO lecturer_quotas (
+          lecturer_id,
+          supervisor_1_quota,
+          supervisor_2_quota,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $2, $3, $3)
+        ON CONFLICT (lecturer_id) DO UPDATE
+        SET supervisor_1_quota = EXCLUDED.supervisor_1_quota,
+            supervisor_2_quota = EXCLUDED.supervisor_2_quota,
+            updated_at = EXCLUDED.updated_at
+      `,
+      [lecturerId, input.quotaLimit, input.timestamp]
+    );
 
     return (
       (await this.listLecturerDirectory()).find((item) => item.id === lecturerId) ||
@@ -193,8 +182,121 @@ export class PostgresUserRepository implements UserRepository {
     );
   }
 
-  async listStudentDirectory(options: { lecturerId?: string | null } = {}) {
+  async listCoordinatorLifecycleSummary() {
     const result = await this.db.query<{
+      stage_code: string;
+      stage_name: string;
+      lifecycle_status: string;
+      student_count: string | number;
+      active_thesis_count: string | number;
+      completed_thesis_count: string | number;
+    }>(`
+      SELECT
+        stage_code,
+        stage_name,
+        lifecycle_status,
+        student_count,
+        active_thesis_count,
+        completed_thesis_count
+      FROM canonical_coordinator_reporting_summary
+      ORDER BY
+        CASE stage_code
+          WHEN 'UNREGISTERED' THEN 0
+          WHEN 'PROPOSAL_GUIDANCE' THEN 10
+          WHEN 'PROPOSAL_SEMINAR' THEN 20
+          WHEN 'PROPOSAL_REVISION' THEN 30
+          WHEN 'FINAL_GUIDANCE' THEN 40
+          WHEN 'FINAL_DEFENSE' THEN 50
+          WHEN 'FINAL_REVISION' THEN 60
+          WHEN 'COMPLETED' THEN 70
+          ELSE 999
+        END,
+        lifecycle_status ASC
+    `);
+
+    return result.rows.map((row): CoordinatorLifecycleSummaryItem => ({
+      stageCode: row.stage_code,
+      stageName: row.stage_name,
+      lifecycleStatus: row.lifecycle_status,
+      studentCount: Number(row.student_count || 0),
+      activeThesisCount: Number(row.active_thesis_count || 0),
+      completedThesisCount: Number(row.completed_thesis_count || 0),
+    }));
+  }
+
+  async listStudentDirectory(
+    options: {
+      lecturerId?: string | null;
+      stage?: CoordinatorLifecycleStageCode | null;
+      q?: string | null;
+      page?: number;
+      limit?: number;
+      sortBy?: StudentDirectorySortBy;
+      sortDir?: SortDirection;
+    } = {}
+  ) {
+    const page = Math.max(1, options.page || 1);
+    const limit = Math.max(1, options.limit || 20);
+    const offset = (page - 1) * limit;
+    const sortBy = options.sortBy || "name";
+    const sortDir = options.sortDir || "asc";
+    const activeStepExpression =
+      "COALESCE(active_step.step_id, next_step.step_id, summary.current_legacy_step_id)::TEXT";
+    const completedExpression =
+      "(COALESCE(pc.total_steps, summary.total_steps, 0) > 0 AND COALESCE(pc.completed_steps, summary.completed_steps, 0) = COALESCE(pc.total_steps, summary.total_steps, 0))";
+    const stageToStepId: Partial<Record<CoordinatorLifecycleStageCode, StepId>> = {
+      PROPOSAL_GUIDANCE: "bimbingan-pra-proposal",
+      PROPOSAL_SEMINAR: "sidang-proposal",
+      PROPOSAL_REVISION: "revisi-proposal",
+      FINAL_GUIDANCE: "bimbingan-pra-sidang",
+      FINAL_DEFENSE: "sidang",
+      FINAL_REVISION: "revisi-sidang",
+    };
+    const queryParams: unknown[] = [];
+    const filters: string[] = [];
+
+    if (options.stage === "COMPLETED") {
+      filters.push(completedExpression);
+    } else if (options.stage === "UNREGISTERED") {
+      filters.push(`NOT ${completedExpression}`);
+      filters.push(`(${activeStepExpression} IS NULL OR ${activeStepExpression} = 'pendaftaran-ta')`);
+    } else if (options.stage) {
+      queryParams.push(stageToStepId[options.stage]);
+      filters.push(`NOT ${completedExpression}`);
+      filters.push(`${activeStepExpression} = $${queryParams.length}`);
+    }
+
+    const normalizedSearch = options.q?.trim();
+    if (normalizedSearch) {
+      queryParams.push(`%${normalizedSearch}%`);
+      filters.push(`
+        (
+          summary.student_name ILIKE $${queryParams.length}
+          OR summary.identifier ILIKE $${queryParams.length}
+          OR summary.nim ILIKE $${queryParams.length}
+          OR summary.email ILIKE $${queryParams.length}
+          OR COALESCE(summary.thesis_title, lr.judul_ta, '') ILIKE $${queryParams.length}
+          OR COALESCE(summary.supervisor1_name, sm.supervisor1_name, '') ILIKE $${queryParams.length}
+          OR COALESCE(summary.supervisor2_name, sm.supervisor2_name, '') ILIKE $${queryParams.length}
+        )
+      `);
+    }
+    const filterSql = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
+    const sortExpressions: Record<StudentDirectorySortBy, string> = {
+      name: "summary.student_name",
+      nim: "COALESCE(summary.nim, summary.identifier)",
+      stage: "COALESCE(active_step.label, next_step.label, summary.current_stage_name, 'Pendaftaran TA')",
+      supervisor1: "COALESCE(summary.supervisor1_name, sm.supervisor1_name, '')",
+    };
+    const orderExpression = sortExpressions[sortBy];
+    const orderDirection = sortDir === "desc" ? "DESC" : "ASC";
+    queryParams.push(limit);
+    const limitParam = queryParams.length;
+    queryParams.push(offset);
+    const offsetParam = queryParams.length;
+
+    const result = await this.db.query<{
+      total_count: string | number;
       id: string;
       identifier: string;
       name: string;
@@ -215,7 +317,7 @@ export class PostgresUserRepository implements UserRepository {
       supervisor2_id: string | null;
       supervisor2_name: string | null;
     }>(`
-      WITH latest_registration AS (
+      WITH legacy_latest_registration AS (
         SELECT DISTINCT ON (student_id)
           id,
           student_id,
@@ -231,7 +333,7 @@ export class PostgresUserRepository implements UserRepository {
           COALESCE(updated_at, submitted_at, validated_at, created_at) DESC,
           id DESC
       ),
-      supervisor_map AS (
+      legacy_supervisor_map AS (
         SELECT
           registration_id,
           MAX(lecturer_id::TEXT) FILTER (WHERE supervisor_order = 1) AS supervisor1_id,
@@ -251,38 +353,45 @@ export class PostgresUserRepository implements UserRepository {
         GROUP BY student_id
       )
       SELECT
-        u.id::TEXT AS id,
-        u.identifier,
-        u.name,
-        u.email,
-        u.status,
-        sp.nim,
-        sp.program_studi,
-        sp.angkatan,
-        sp.kelas,
-        lr.judul_ta AS thesis_title,
-        COALESCE(active_step.step_id, next_step.step_id)::TEXT AS active_step_id,
-        COALESCE(active_step.label, next_step.label) AS active_step_label,
-        COALESCE(active_step.status, next_step.status)::TEXT AS active_step_status,
-        pc.completed_steps,
-        pc.total_steps,
-        sm.supervisor1_id,
-        sm.supervisor1_name,
-        sm.supervisor2_id,
-        sm.supervisor2_name
-      FROM users u
-      LEFT JOIN student_profiles sp
-        ON sp.user_id = u.id
-      LEFT JOIN latest_registration lr
-        ON lr.student_id = u.id
-      LEFT JOIN supervisor_map sm
+        COUNT(*) OVER()::TEXT AS total_count,
+        summary.student_id::TEXT AS id,
+        summary.identifier,
+        summary.student_name AS name,
+        summary.email,
+        summary.student_status AS status,
+        summary.nim,
+        summary.program_studi,
+        summary.angkatan,
+        summary.kelas,
+        COALESCE(summary.thesis_title, lr.judul_ta) AS thesis_title,
+        COALESCE(
+          active_step.step_id,
+          next_step.step_id,
+          summary.current_legacy_step_id
+        )::TEXT AS active_step_id,
+        COALESCE(
+          active_step.label,
+          next_step.label,
+          summary.current_stage_name
+        ) AS active_step_label,
+        COALESCE(active_step.status, next_step.status, 'active')::TEXT AS active_step_status,
+        COALESCE(pc.completed_steps, summary.completed_steps) AS completed_steps,
+        COALESCE(pc.total_steps, summary.total_steps) AS total_steps,
+        COALESCE(summary.supervisor1_id, sm.supervisor1_id) AS supervisor1_id,
+        COALESCE(summary.supervisor1_name, sm.supervisor1_name) AS supervisor1_name,
+        COALESCE(summary.supervisor2_id, sm.supervisor2_id) AS supervisor2_id,
+        COALESCE(summary.supervisor2_name, sm.supervisor2_name) AS supervisor2_name
+      FROM canonical_student_directory_summary summary
+      LEFT JOIN legacy_latest_registration lr
+        ON lr.student_id = summary.student_id
+      LEFT JOIN legacy_supervisor_map sm
         ON sm.registration_id = lr.id
       LEFT JOIN progress_counts pc
-        ON pc.student_id = u.id
+        ON pc.student_id = summary.student_id
       LEFT JOIN LATERAL (
         SELECT step_id, label, status
         FROM student_progress_steps
-        WHERE student_id = u.id
+        WHERE student_id = summary.student_id
           AND status = 'active'
         ORDER BY step_order ASC
         LIMIT 1
@@ -290,26 +399,18 @@ export class PostgresUserRepository implements UserRepository {
       LEFT JOIN LATERAL (
         SELECT step_id, label, status
         FROM student_progress_steps
-        WHERE student_id = u.id
+        WHERE student_id = summary.student_id
           AND status <> 'completed'
         ORDER BY step_order ASC
         LIMIT 1
       ) next_step ON TRUE
-      WHERE u.status = 'Aktif'
-        AND (
-          u.role = 'mahasiswa'
-          OR EXISTS (
-            SELECT 1
-            FROM user_roles ur
-            WHERE ur.user_id = u.id
-              AND ur.role = 'mahasiswa'
-              AND ur.status = 'Aktif'
-          )
-        )
-      ORDER BY u.name ASC
-    `);
+      ${filterSql}
+      ORDER BY ${orderExpression} ${orderDirection}, summary.student_name ASC
+      LIMIT $${limitParam}
+      OFFSET $${offsetParam}
+    `, queryParams);
 
-    return result.rows.map((row): StudentDirectoryItem => {
+    const data = result.rows.map((row): StudentDirectoryItem => {
       const completedSteps = Number(row.completed_steps || 0);
       const totalSteps = Number(row.total_steps || 0);
       const isCompleted = totalSteps > 0 && completedSteps === totalSteps;
@@ -344,6 +445,19 @@ export class PostgresUserRepository implements UserRepository {
         supervisorRole,
       };
     });
+    const total = Number(result.rows[0]?.total_count || 0);
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+        sortBy,
+        sortDir,
+      },
+    };
   }
 
   async replaceAll(records: UserAccount[]): Promise<UserAccount[]> {

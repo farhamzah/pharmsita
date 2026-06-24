@@ -1,9 +1,13 @@
 import crypto from "node:crypto";
 import type { DatabaseAdapter } from "../database/schema";
 import type {
+  CoordinatorLifecycleStageCode,
   FinalProjectRegistration,
+  CoordinatorLifecycleSummaryItem,
   LecturerDirectoryItem,
+  SortDirection,
   StudentDirectoryItem,
+  StudentDirectorySortBy,
   StudentStep,
   UserAccount,
   UserRecord,
@@ -44,6 +48,69 @@ const readActiveStep = (steps: StudentStep[]) => {
 
   return steps.find((step) => step.status !== "completed") || steps[0] || null;
 };
+
+const lifecycleStageToStepId: Partial<
+  Record<CoordinatorLifecycleStageCode, StudentDirectoryItem["activeStepId"]>
+> = {
+  PROPOSAL_GUIDANCE: "bimbingan-pra-proposal",
+  PROPOSAL_SEMINAR: "sidang-proposal",
+  PROPOSAL_REVISION: "revisi-proposal",
+  FINAL_GUIDANCE: "bimbingan-pra-sidang",
+  FINAL_DEFENSE: "sidang",
+  FINAL_REVISION: "revisi-sidang",
+};
+
+const matchesLifecycleStage = (
+  item: StudentDirectoryItem,
+  stage?: CoordinatorLifecycleStageCode | null
+) => {
+  if (!stage) {
+    return true;
+  }
+
+  if (stage === "COMPLETED") {
+    return item.isCompleted;
+  }
+
+  if (stage === "UNREGISTERED") {
+    return !item.isCompleted && (!item.activeStepId || item.activeStepId === "pendaftaran-ta");
+  }
+
+  return item.activeStepId === lifecycleStageToStepId[stage];
+};
+
+const readSortValue = (
+  item: StudentDirectoryItem,
+  sortBy: StudentDirectorySortBy
+) => {
+  if (sortBy === "nim") return item.nim || item.identifier;
+  if (sortBy === "stage") return item.activeStepLabel;
+  if (sortBy === "supervisor1") return item.supervisor1Name || "";
+  return item.name;
+};
+
+const sortStudentDirectoryItems = (
+  items: StudentDirectoryItem[],
+  sortBy: StudentDirectorySortBy,
+  sortDir: SortDirection
+) =>
+  [...items].sort((left, right) => {
+    const direction = sortDir === "desc" ? -1 : 1;
+    const primary = readSortValue(left, sortBy).localeCompare(
+      readSortValue(right, sortBy),
+      "id",
+      { numeric: true, sensitivity: "base" }
+    );
+
+    if (primary !== 0) {
+      return primary * direction;
+    }
+
+    return left.name.localeCompare(right.name, "id", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
 
 const applyProfileFields = (
   user: UserRecord,
@@ -139,10 +206,75 @@ export class PersistentUserRepository implements UserRepository {
     return this.listLecturerDirectory().find((item) => item.id === lecturerId) || null;
   }
 
-  listStudentDirectory(options: { lecturerId?: string | null } = {}) {
+  listCoordinatorLifecycleSummary() {
+    const stageLabels: Record<string, string> = {
+      "pendaftaran-ta": "Pendaftaran TA",
+      "bimbingan-pra-proposal": "Bimbingan Proposal",
+      "sidang-proposal": "Seminar Proposal",
+      "revisi-proposal": "Revisi Proposal",
+      "bimbingan-pra-sidang": "Bimbingan Akhir",
+      sidang: "Sidang Akhir",
+      "revisi-sidang": "Revisi Sidang Akhir",
+      COMPLETED: "Selesai",
+      UNREGISTERED: "Belum Pendaftaran TA",
+    };
     const state = this.database.read();
+    const summaries = new Map<string, CoordinatorLifecycleSummaryItem>();
 
-    return state.users
+    state.users
+      .filter((user) => user.role === "mahasiswa" && user.status === "Aktif")
+      .forEach((user) => {
+        const workflow = state.studentWorkflows[user.id] || state.studentWorkflow;
+        const activeStep = readActiveStep(workflow.progressSteps as StudentStep[]);
+        const registration = state.finalProjectRegistrations
+          .filter((item) => item.studentId === user.id)
+          .sort(byNewestRegistration)[0];
+        const stageCode = activeStep?.id || (registration ? "COMPLETED" : "UNREGISTERED");
+        const lifecycleStatus = registration?.status || "UNREGISTERED";
+        const key = `${stageCode}:${lifecycleStatus}`;
+        const current = summaries.get(key) || {
+          stageCode,
+          stageName: stageLabels[stageCode] || stageCode,
+          lifecycleStatus,
+          studentCount: 0,
+          activeThesisCount: 0,
+          completedThesisCount: 0,
+        };
+
+        current.studentCount += 1;
+        if (registration?.status === "Disetujui" && stageCode !== "COMPLETED") {
+          current.activeThesisCount += 1;
+        }
+        if (stageCode === "COMPLETED") {
+          current.completedThesisCount += 1;
+        }
+        summaries.set(key, current);
+      });
+
+    return [...summaries.values()].sort((left, right) =>
+      left.stageName.localeCompare(right.stageName)
+    );
+  }
+
+  listStudentDirectory(
+    options: {
+      lecturerId?: string | null;
+      stage?: CoordinatorLifecycleStageCode | null;
+      q?: string | null;
+      page?: number;
+      limit?: number;
+      sortBy?: StudentDirectorySortBy;
+      sortDir?: SortDirection;
+    } = {}
+  ) {
+    const state = this.database.read();
+    const page = Math.max(1, options.page || 1);
+    const limit = Math.max(1, options.limit || 20);
+    const sortBy = options.sortBy || "name";
+    const sortDir = options.sortDir || "asc";
+    const normalizedSearch = options.q?.trim().toLowerCase() || "";
+
+    const data = sortStudentDirectoryItems(state.users
       .filter((user) => user.role === "mahasiswa" && user.status === "Aktif")
       .map((user): StudentDirectoryItem => {
         const workflow =
@@ -187,7 +319,40 @@ export class PersistentUserRepository implements UserRepository {
           supervisor2Name: supervisor2?.lecturerName,
           supervisorRole,
         };
-      });
+      })
+      .filter((item) => matchesLifecycleStage(item, options.stage))
+      .filter((item) => {
+        if (!normalizedSearch) {
+          return true;
+        }
+
+        return [
+          item.name,
+          item.identifier,
+          item.nim,
+          item.email,
+          item.thesisTitle,
+          item.supervisor1Name,
+          item.supervisor2Name,
+        ]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+      }), sortBy, sortDir);
+    const total = data.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const start = (page - 1) * limit;
+
+    return {
+      data: data.slice(start, start + limit),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages,
+        sortBy,
+        sortDir,
+      },
+    };
   }
 
   replaceAll(records: UserAccount[]) {

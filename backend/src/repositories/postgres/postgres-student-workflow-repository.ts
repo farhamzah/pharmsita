@@ -122,6 +122,7 @@ interface ExamRequirementRow {
 
 interface ExamPanelistRow {
   id: string;
+  lecturer_id: string | null;
   panelist_key: string | null;
   role: string;
   role_label: string;
@@ -354,6 +355,46 @@ const toScheduleTimeRange = (
   return start || end || "";
 };
 
+const canonicalStageCodeByExamStage: Record<ExamStage, string> = {
+  "sidang-proposal": "PROPOSAL_SEMINAR",
+  sidang: "FINAL_DEFENSE",
+};
+
+const canonicalStageCodeByRevisionStage: Record<RevisionStage, string> = {
+  "revisi-proposal": "PROPOSAL_REVISION",
+  "revisi-sidang": "FINAL_REVISION",
+};
+
+const canonicalStageCodeByProgressStep: Partial<Record<StepId, string>> = {
+  "bimbingan-pra-proposal": "PROPOSAL_GUIDANCE",
+  "sidang-proposal": "PROPOSAL_SEMINAR",
+  "revisi-proposal": "PROPOSAL_REVISION",
+  "bimbingan-pra-sidang": "FINAL_GUIDANCE",
+  sidang: "FINAL_DEFENSE",
+  "revisi-sidang": "FINAL_REVISION",
+};
+
+const canonicalStageSubmissionStatusByExamStatus: Record<ExamWorkflow["status"], string> = {
+  "belum-daftar": "DRAFT",
+  "menunggu-jadwal": "PENDING",
+  terjadwal: "SCHEDULED",
+  selesai: "COMPLETED",
+};
+
+const canonicalStageSubmissionStatusByRevisionWorkflow = (
+  workflow: RevisionWorkflow
+) => {
+  if (workflow.ketuaSidangStatus === "approved") {
+    return "APPROVED";
+  }
+
+  if (workflow.ketuaSidangStatus === "rejected") {
+    return "REJECTED";
+  }
+
+  return workflow.submittedAt ? "PENDING" : "DRAFT";
+};
+
 export class PostgresStudentWorkflowRepository implements StudentWorkflowRepository {
   constructor(private readonly db: PostgresConnectionPool) {
   }
@@ -386,6 +427,7 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
       }
 
       await this.replaceProgressSteps(studentId, steps, client);
+      await this.syncCanonicalProgressAdvancement(studentId, steps, client);
       return withLockState(steps);
     });
   }
@@ -394,6 +436,7 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
     return this.withTransaction(async (client) => {
       const steps = createDefaultStudentWorkflowState().progressSteps;
       await this.replaceProgressSteps(studentId, steps, client);
+      await this.syncCanonicalProgressAdvancement(studentId, steps, client);
       return withLockState(steps);
     });
   }
@@ -669,6 +712,169 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
       [studentId]
     );
     await this.insertDefaultProgressSteps(studentId, steps, client);
+  }
+
+  private async syncCanonicalProgressAdvancement(
+    studentId: string,
+    steps: Omit<StudentStep, "isLocked">[],
+    client: PostgresTransactionClient
+  ) {
+    const thesisResult = await client.query<{ id: string }>(
+      `
+        SELECT id
+        FROM theses
+        WHERE student_id = $1
+          AND status IN ('ACTIVE', 'IN_PROGRESS', 'COMPLETED')
+        ORDER BY
+          CASE status
+            WHEN 'ACTIVE' THEN 1
+            WHEN 'IN_PROGRESS' THEN 2
+            ELSE 3
+          END,
+          COALESCE(updated_at, started_at, created_at) DESC,
+          id DESC
+        LIMIT 1
+      `,
+      [studentId]
+    );
+    const thesisId = thesisResult.rows[0]?.id;
+    if (!thesisId) {
+      return;
+    }
+
+    const completedStageCodes = steps
+      .filter((step) => step.status === "completed")
+      .map((step) => canonicalStageCodeByProgressStep[step.id])
+      .filter((stageCode): stageCode is string => Boolean(stageCode));
+    const nextCanonicalStep = steps.find(
+      (step) => step.status !== "completed" && canonicalStageCodeByProgressStep[step.id]
+    );
+    const currentStageCode = nextCanonicalStep
+      ? canonicalStageCodeByProgressStep[nextCanonicalStep.id]
+      : "COMPLETED";
+
+    if (!currentStageCode) {
+      return;
+    }
+
+    const currentStageResult = await client.query<{ id: string }>(
+      `
+        SELECT id
+        FROM thesis_stages
+        WHERE code = $1
+        LIMIT 1
+      `,
+      [currentStageCode]
+    );
+    const currentStageId = currentStageResult.rows[0]?.id;
+    if (!currentStageId) {
+      return;
+    }
+
+    const thesisStatus =
+      currentStageCode === "COMPLETED"
+        ? "COMPLETED"
+        : completedStageCodes.length > 0
+          ? "IN_PROGRESS"
+          : "ACTIVE";
+
+    await client.query(
+      `
+        UPDATE theses
+        SET current_stage_id = $2,
+            status = $3,
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [thesisId, currentStageId, thesisStatus]
+    );
+
+    await client.query(
+      `
+        UPDATE thesis_stage_histories
+        SET status = CASE WHEN status = 'ACTIVE' THEN 'COMPLETED' ELSE status END,
+            finished_at = COALESCE(finished_at, NOW())
+        WHERE thesis_id = $1
+          AND finished_at IS NULL
+          AND ($2::uuid IS NULL OR stage_id <> $2::uuid)
+      `,
+      [thesisId, currentStageCode === "COMPLETED" ? null : currentStageId]
+    );
+
+    for (const stageCode of completedStageCodes) {
+      await client.query(
+        `
+          WITH stage AS (
+            SELECT id
+            FROM thesis_stages
+            WHERE code = $2
+            LIMIT 1
+          ),
+          updated AS (
+            UPDATE thesis_stage_histories history
+            SET status = 'COMPLETED',
+                finished_at = COALESCE(history.finished_at, NOW())
+            FROM stage
+            WHERE history.thesis_id = $1
+              AND history.stage_id = stage.id
+            RETURNING history.id
+          )
+          INSERT INTO thesis_stage_histories (
+            thesis_id,
+            stage_id,
+            status,
+            started_at,
+            finished_at,
+            created_at
+          )
+          SELECT
+            $1,
+            stage.id,
+            'COMPLETED',
+            NOW(),
+            NOW(),
+            NOW()
+          FROM stage
+          WHERE NOT EXISTS (SELECT 1 FROM updated)
+            AND NOT EXISTS (
+              SELECT 1
+              FROM thesis_stage_histories history
+              WHERE history.thesis_id = $1
+                AND history.stage_id = stage.id
+                AND history.status = 'COMPLETED'
+            )
+        `,
+        [thesisId, stageCode]
+      );
+    }
+
+    if (currentStageCode !== "COMPLETED") {
+      await client.query(
+        `
+          INSERT INTO thesis_stage_histories (
+            thesis_id,
+            stage_id,
+            status,
+            started_at,
+            created_at
+          )
+          SELECT
+            $1,
+            $2,
+            'ACTIVE',
+            NOW(),
+            NOW()
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM thesis_stage_histories
+            WHERE thesis_id = $1
+              AND stage_id = $2
+              AND finished_at IS NULL
+          )
+        `,
+        [thesisId, currentStageId]
+      );
+    }
   }
 
   private async ensureInitialRequirements(studentId: string) {
@@ -1313,6 +1519,7 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
       `
         SELECT
           id,
+          lecturer_id,
           panelist_key,
           role,
           role_label,
@@ -1400,6 +1607,7 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
     );
     await this.insertExamRequirements(examId, workflow.requirements, client);
     await this.insertExamPanelists(examId, workflow.panelists, client);
+    await this.syncCanonicalExamWorkflow(studentId, stageId, examId, workflow, client);
   }
 
   private async upsertExamWorkflow(
@@ -1527,6 +1735,7 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
           INSERT INTO exam_panelists (
             id,
             exam_id,
+            lecturer_id,
             panelist_key,
             role,
             role_label,
@@ -1535,7 +1744,31 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
             approved,
             updated_at
           )
-          VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, NOW())
+          VALUES (
+            COALESCE($1::uuid, gen_random_uuid()),
+            $2,
+            (
+              SELECT id
+              FROM users
+              WHERE id = $9::uuid
+                 OR LOWER(identifier) = LOWER($10)
+                 OR LOWER(name) = LOWER($6)
+              ORDER BY
+                CASE
+                  WHEN id = $9::uuid THEN 1
+                  WHEN LOWER(identifier) = LOWER($10) THEN 2
+                  ELSE 3
+                END
+              LIMIT 1
+            ),
+            $3,
+            $4,
+            $5,
+            $6,
+            $7,
+            $8,
+            NOW()
+          )
         `,
         [
           toUuidOrNull(panelist.id),
@@ -1546,6 +1779,8 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
           panelist.name,
           panelist.nidn || null,
           panelist.approved,
+          toUuidOrNull(panelist.id),
+          panelist.nidn || "",
         ]
       );
     }
@@ -1780,6 +2015,7 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
       `,
       [workflowId, itemNumbers]
     );
+    await this.syncCanonicalRevisionWorkflow(studentId, stageId, workflowId, workflow, client);
   }
 
   private async upsertRevisionWorkflow(
@@ -1872,6 +2108,380 @@ export class PostgresStudentWorkflowRepository implements StudentWorkflowReposit
         ]
       );
     }
+  }
+
+  private async syncCanonicalExamWorkflow(
+    studentId: string,
+    stageId: ExamStage,
+    examId: string,
+    workflow: ExamWorkflow,
+    client: PostgresTransactionClient
+  ) {
+    const stageCode = canonicalStageCodeByExamStage[stageId];
+    const revisionStageCode =
+      stageId === "sidang-proposal" ? "PROPOSAL_REVISION" : "FINAL_REVISION";
+
+    await client.query(
+      `
+        INSERT INTO stage_submissions (
+          id,
+          legacy_exam_id,
+          thesis_id,
+          student_id,
+          thesis_stage_id,
+          requirement_drive_link,
+          status,
+          submitted_at,
+          validated_at,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        SELECT
+          exam.id,
+          exam.id,
+          thesis.id,
+          exam.student_id,
+          stage.id,
+          exam.google_docs_link,
+          $3,
+          exam.submitted_at,
+          CASE WHEN exam.status = 'selesai' THEN COALESCE(exam.updated_at, NOW()) ELSE NULL END,
+          COALESCE(exam.created_at, NOW()),
+          exam.updated_at,
+          exam.updated_by
+        FROM exams exam
+        JOIN thesis_stages stage
+          ON stage.code = $2
+        LEFT JOIN theses thesis
+          ON thesis.student_id = exam.student_id
+          AND thesis.status IN ('ACTIVE', 'IN_PROGRESS')
+        WHERE exam.id = $1
+        ON CONFLICT (id) DO UPDATE
+        SET
+          legacy_exam_id = EXCLUDED.legacy_exam_id,
+          thesis_id = EXCLUDED.thesis_id,
+          student_id = EXCLUDED.student_id,
+          thesis_stage_id = EXCLUDED.thesis_stage_id,
+          requirement_drive_link = EXCLUDED.requirement_drive_link,
+          status = EXCLUDED.status,
+          submitted_at = EXCLUDED.submitted_at,
+          validated_at = EXCLUDED.validated_at,
+          updated_at = EXCLUDED.updated_at,
+          updated_by = EXCLUDED.updated_by
+      `,
+      [examId, stageCode, canonicalStageSubmissionStatusByExamStatus[workflow.status]]
+    );
+
+    await this.syncCanonicalScheduleAndAssessments(examId, client);
+    await this.syncCanonicalExamRevisionNotes(examId, revisionStageCode, client);
+  }
+
+  private async syncCanonicalScheduleAndAssessments(
+    examId: string,
+    client: PostgresTransactionClient
+  ) {
+    const scheduleResult = await client.query<{ id: string }>(
+      `
+        INSERT INTO thesis_schedules (
+          id,
+          legacy_exam_id,
+          student_id,
+          thesis_id,
+          thesis_stage_id,
+          room,
+          location,
+          start_time,
+          end_time,
+          created_by,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        SELECT
+          exam.id,
+          exam.id,
+          exam.student_id,
+          thesis.id,
+          stage.id,
+          exam.schedule_room,
+          exam.schedule_location,
+          CASE
+            WHEN exam.schedule_date IS NOT NULL AND exam.schedule_start_time IS NOT NULL
+              THEN exam.schedule_date + exam.schedule_start_time
+            ELSE NULL
+          END,
+          CASE
+            WHEN exam.schedule_date IS NOT NULL AND exam.schedule_end_time IS NOT NULL
+              THEN exam.schedule_date + exam.schedule_end_time
+            ELSE NULL
+          END,
+          exam.updated_by,
+          COALESCE(exam.created_at, NOW()),
+          exam.updated_at,
+          exam.updated_by
+        FROM exams exam
+        JOIN thesis_stages stage
+          ON stage.legacy_step_id = exam.stage_id
+        LEFT JOIN theses thesis
+          ON thesis.student_id = exam.student_id
+          AND thesis.status IN ('ACTIVE', 'IN_PROGRESS')
+        WHERE exam.id = $1
+          AND (
+            exam.schedule_date IS NOT NULL
+            OR NULLIF(TRIM(COALESCE(exam.schedule_room, '')), '') IS NOT NULL
+            OR NULLIF(TRIM(COALESCE(exam.schedule_location, '')), '') IS NOT NULL
+          )
+        ON CONFLICT (id) DO UPDATE
+        SET
+          legacy_exam_id = EXCLUDED.legacy_exam_id,
+          student_id = EXCLUDED.student_id,
+          thesis_id = EXCLUDED.thesis_id,
+          thesis_stage_id = EXCLUDED.thesis_stage_id,
+          room = EXCLUDED.room,
+          location = EXCLUDED.location,
+          start_time = EXCLUDED.start_time,
+          end_time = EXCLUDED.end_time,
+          created_by = EXCLUDED.created_by,
+          updated_at = EXCLUDED.updated_at,
+          updated_by = EXCLUDED.updated_by
+        RETURNING id
+      `,
+      [examId]
+    );
+
+    if (!scheduleResult.rows[0]) {
+      await client.query(
+        `
+          DELETE FROM thesis_schedules
+          WHERE legacy_exam_id = $1
+        `,
+        [examId]
+      );
+      return;
+    }
+
+    await client.query(
+      `
+        DELETE FROM thesis_assessments
+        WHERE schedule_id = $1
+      `,
+      [scheduleResult.rows[0].id]
+    );
+
+    await client.query(
+      `
+        INSERT INTO thesis_assessments (
+          schedule_id,
+          examiner_id,
+          role,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        SELECT
+          $1,
+          panelist.lecturer_id,
+          CASE panelist.role
+            WHEN 'ketua-sidang' THEN 'CHAIRMAN'
+            WHEN 'penguji1' THEN 'EXAMINER_1'
+            ELSE 'EXAMINER_2'
+          END,
+          COALESCE(panelist.created_at, NOW()),
+          panelist.updated_at,
+          panelist.updated_by
+        FROM exam_panelists panelist
+        WHERE panelist.exam_id = $2
+          AND panelist.lecturer_id IS NOT NULL
+      `,
+      [scheduleResult.rows[0].id, examId]
+    );
+  }
+
+  private async syncCanonicalExamRevisionNotes(
+    examId: string,
+    revisionStageCode: string,
+    client: PostgresTransactionClient
+  ) {
+    await client.query(
+      `
+        DELETE FROM revision_notes note
+        USING exams exam
+        JOIN theses thesis
+          ON thesis.student_id = exam.student_id
+          AND thesis.status IN ('ACTIVE', 'IN_PROGRESS')
+        JOIN thesis_stages stage
+          ON stage.code = $2
+        WHERE exam.id = $1
+          AND note.thesis_id = thesis.id
+          AND note.thesis_stage_id = stage.id
+          AND note.assessment_id IS NULL
+          AND note.legacy_revision_item_id IS NULL
+      `,
+      [examId, revisionStageCode]
+    );
+
+    await client.query(
+      `
+        INSERT INTO revision_notes (
+          thesis_id,
+          thesis_stage_id,
+          title,
+          note,
+          status,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        SELECT
+          thesis.id,
+          stage.id,
+          LEFT(note_text.value, 255),
+          note_text.value,
+          'PENDING',
+          COALESCE(exam.updated_at, NOW()),
+          exam.updated_at,
+          exam.updated_by
+        FROM exams exam
+        JOIN theses thesis
+          ON thesis.student_id = exam.student_id
+          AND thesis.status IN ('ACTIVE', 'IN_PROGRESS')
+        JOIN thesis_stages stage
+          ON stage.code = $2
+        CROSS JOIN LATERAL jsonb_array_elements_text(exam.revision_notes::jsonb) AS note_text(value)
+        WHERE exam.id = $1
+          AND NULLIF(TRIM(note_text.value), '') IS NOT NULL
+      `,
+      [examId, revisionStageCode]
+    );
+  }
+
+  private async syncCanonicalRevisionWorkflow(
+    studentId: string,
+    stageId: RevisionStage,
+    workflowId: string,
+    workflow: RevisionWorkflow,
+    client: PostgresTransactionClient
+  ) {
+    const stageCode = canonicalStageCodeByRevisionStage[stageId];
+
+    await client.query(
+      `
+        INSERT INTO stage_submissions (
+          id,
+          legacy_revision_workflow_id,
+          thesis_id,
+          student_id,
+          thesis_stage_id,
+          latest_document_file,
+          status,
+          submitted_at,
+          validated_at,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        SELECT
+          workflow.id,
+          workflow.id,
+          thesis.id,
+          workflow.student_id,
+          stage.id,
+          workflow.final_file_ref,
+          $4,
+          workflow.submitted_at,
+          CASE WHEN workflow.ketua_sidang_status = 'approved' THEN COALESCE(workflow.updated_at, NOW()) ELSE NULL END,
+          COALESCE(workflow.created_at, NOW()),
+          workflow.updated_at,
+          workflow.updated_by
+        FROM revision_workflows workflow
+        JOIN thesis_stages stage
+          ON stage.code = $3
+        LEFT JOIN theses thesis
+          ON thesis.student_id = workflow.student_id
+          AND thesis.status IN ('ACTIVE', 'IN_PROGRESS')
+        WHERE workflow.id = $1
+          AND workflow.student_id = $2
+        ON CONFLICT (id) DO UPDATE
+        SET
+          legacy_revision_workflow_id = EXCLUDED.legacy_revision_workflow_id,
+          thesis_id = EXCLUDED.thesis_id,
+          student_id = EXCLUDED.student_id,
+          thesis_stage_id = EXCLUDED.thesis_stage_id,
+          latest_document_file = EXCLUDED.latest_document_file,
+          status = EXCLUDED.status,
+          submitted_at = EXCLUDED.submitted_at,
+          validated_at = EXCLUDED.validated_at,
+          updated_at = EXCLUDED.updated_at,
+          updated_by = EXCLUDED.updated_by
+      `,
+      [
+        workflowId,
+        studentId,
+        stageCode,
+        canonicalStageSubmissionStatusByRevisionWorkflow(workflow),
+      ]
+    );
+
+    await client.query(
+      `
+        INSERT INTO revision_notes (
+          legacy_revision_item_id,
+          thesis_id,
+          thesis_stage_id,
+          title,
+          note,
+          status,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        SELECT
+          item.id,
+          thesis.id,
+          stage.id,
+          item.title,
+          COALESCE(NULLIF(TRIM(item.materi), ''), item.topik, item.penyelesaian),
+          CASE item.status
+            WHEN 'done' THEN 'COMPLETED'
+            WHEN 'in progress' THEN 'PENDING'
+            ELSE 'DRAFT'
+          END,
+          COALESCE(item.created_at, NOW()),
+          item.updated_at,
+          item.updated_by
+        FROM revision_items item
+        JOIN revision_workflows workflow
+          ON workflow.id = item.revision_workflow_id
+        JOIN thesis_stages stage
+          ON stage.code = $3
+        LEFT JOIN theses thesis
+          ON thesis.student_id = workflow.student_id
+          AND thesis.status IN ('ACTIVE', 'IN_PROGRESS')
+        WHERE workflow.id = $1
+          AND workflow.student_id = $2
+        ON CONFLICT (legacy_revision_item_id) DO UPDATE
+        SET
+          thesis_id = EXCLUDED.thesis_id,
+          thesis_stage_id = EXCLUDED.thesis_stage_id,
+          title = EXCLUDED.title,
+          note = EXCLUDED.note,
+          status = EXCLUDED.status,
+          updated_at = EXCLUDED.updated_at,
+          updated_by = EXCLUDED.updated_by
+      `,
+      [workflowId, studentId, stageCode]
+    );
+
+    await client.query(
+      `
+        UPDATE guidance_materials material
+        SET revision_note_id = note.id
+        FROM revision_notes note
+        WHERE note.legacy_revision_item_id = material.source_revision_item_id
+          AND material.revision_note_id IS NULL
+      `
+    );
   }
 
   private async withTransaction<T>(
