@@ -128,3 +128,15 @@ Reason:
 - Production evidence chain sekarang blocked sampai attachment aktual diberikan.
 - Pekerjaan berikutnya yang bisa dilakukan adalah audit perubahan sebelum commit/push.
 - Audit perlu memastikan tidak ada secret, file salah, atau attachment besar yang tidak perlu ikut Git.
+
+## Task 179 Evidence Intake
+
+Task 179 sudah dicatat di `docs/production-evidence-attachment-intake-signoff-verification.md`.
+
+Status Task 179: `BLOCKED - NO PRODUCTION ATTACHMENT RECEIVED`
+
+Catatan:
+
+- Attachment production aktual belum tersedia.
+- Final signer approval belum bisa dicatat.
+- Production evidence chain tetap menunggu evidence dari domain HTTPS production asli.

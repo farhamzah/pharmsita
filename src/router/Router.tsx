@@ -1,9 +1,11 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { AuthService } from "../core/services/auth-service";
 import type { Role } from "../types/roles";
 
-type RouteHandler = React.FC;
+type RouteHandler =
+  | React.ComponentType
+  | React.LazyExoticComponent<React.ComponentType>;
 
 type Route = {
   handler: RouteHandler;
@@ -75,7 +77,11 @@ function renderRoute(name: string) {
   }
 
   const Component = route.handler;
-  root.render(<Component />);
+  root.render(
+    <Suspense fallback={<div className="p-6 text-sm text-slate-600">Memuat halaman...</div>}>
+      <Component />
+    </Suspense>,
+  );
 }
 
 export function initRouter() {
