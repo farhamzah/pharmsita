@@ -75,6 +75,7 @@ const requiredEntries = [
   ["docs/frontend-route-code-splitting-bundle-optimization.md", "docs/frontend-route-code-splitting-bundle-optimization.md"],
   ["docs/browser-qa-lazy-route-loading-login-deeplink.md", "docs/browser-qa-lazy-route-loading-login-deeplink.md"],
   ["docs/local-release-artifact-integrity-qa.md", "docs/local-release-artifact-integrity-qa.md"],
+  ["docs/vps-preflight-package-handoff-operator-checklist.md", "docs/vps-preflight-package-handoff-operator-checklist.md"],
   ["docs/local-postgresql-runtime-final-verification.md", "docs/local-postgresql-runtime-final-verification.md"],
   ["docs/local-postgresql-backup-restore-drill.md", "docs/local-postgresql-backup-restore-drill.md"],
   ["docs/local-release-bundle-evidence-packet.md", "docs/local-release-bundle-evidence-packet.md"],
