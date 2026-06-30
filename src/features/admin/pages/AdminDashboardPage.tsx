@@ -3,6 +3,8 @@ import ContentWrapper from '../../../components/ContentWrapper';
 import MainLayout from '../../../layouts/MainLayout';
 import { SectionCard } from '../../../components/ui/SectionCard';
 import Button from '../../../components/ui/Button';
+import { adminApi, type ListResponse } from '../../../core/api/domain';
+import type { AdminAccount, AdminMasterRecord } from '../../../core/services/admin-data-service';
 import { 
   Users, 
   GraduationCap, 
@@ -19,29 +21,89 @@ import {
   Clock
 } from 'lucide-react';
 
-const mockStats = [
-  { label: 'Total Mahasiswa', value: '142', icon: GraduationCap, color: 'text-blue-600', bg: 'bg-blue-100' },
-  { label: 'Total Dosen', value: '24', icon: Users, color: 'text-purple-600', bg: 'bg-purple-100' },
-  { label: 'Koordinator', value: '2', icon: UserCheck, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-  { label: 'Akun Baru (Bulan Ini)', value: '18', icon: UserPlus, color: 'text-amber-600', bg: 'bg-amber-100' },
-  { label: 'Dokumen & Panduan', value: '12', icon: FileText, color: 'text-indigo-600', bg: 'bg-indigo-100' },
-];
+const emptyList = <T,>(): ListResponse<T> => ({
+  data: [],
+  meta: { page: 1, limit: 20, total: 0, totalPages: 1 },
+});
 
-const mockActivities = [
-  { id: 1, action: 'Menambahkan User Baru', detail: 'Dr. Apt. Andi Setiawan (Dosen) berhasil ditambahkan.', time: '2 jam yang lalu', type: 'user' },
-  { id: 2, action: 'Upload Dokumen', detail: 'Template Proposal TA v2.0 telah diperbarui.', time: 'Kemarin, 14:30', type: 'doc' },
-  { id: 3, action: 'Update Syarat & Ketentuan', detail: 'Menambahkan syarat "Bukti Bebas Lab" pada Sidang Akhir.', time: 'Kemarin, 09:15', type: 'terms' },
-  { id: 4, action: 'Import Data Mahasiswa', detail: '15 data mahasiswa angkatan 2022 berhasil di-import.', time: '2 hari yang lalu', type: 'user' },
-];
+const normalizeRole = (role: unknown) => String(role || '').trim().toLowerCase();
 
-const mockOperationalStatus = [
-  { label: 'Periode Berjalan', value: 'Genap 2025/2026', icon: Calendar, active: true },
-  { label: 'Tahapan Aktif', value: 'Pendaftaran & Seminar', icon: CheckCircle, active: true },
-  { label: 'Total Dokumen', value: '12 File Template', icon: FileCheck, active: false },
-  { label: 'Total Panduan/Info', value: '8 Pengumuman', icon: Info, active: false },
-];
+const isActiveRecord = (record: AdminMasterRecord) =>
+  record.status === 'Aktif' || record.isActive === true || record.is_active === true;
 
 const AdminDashboardPage: React.FC = () => {
+  const [users, setUsers] = React.useState<AdminAccount[]>([]);
+  const [periods, setPeriods] = React.useState<AdminMasterRecord[]>([]);
+  const [documents, setDocuments] = React.useState<AdminMasterRecord[]>([]);
+  const [requirements, setRequirements] = React.useState<AdminMasterRecord[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [error, setError] = React.useState('');
+
+  React.useEffect(() => {
+    let isMounted = true;
+
+    Promise.all([
+      adminApi.listUsers().catch(() => emptyList<AdminAccount>()),
+      adminApi.listAcademicPeriods().catch(() => emptyList<AdminMasterRecord>()),
+      adminApi.listSupportingDocuments().catch(() => emptyList<AdminMasterRecord>()),
+      adminApi.listRequirementDefinitions().catch(() => emptyList<AdminMasterRecord>()),
+    ])
+      .then(([userResponse, periodResponse, documentResponse, requirementResponse]) => {
+        if (!isMounted) return;
+        setUsers(userResponse.data || []);
+        setPeriods(periodResponse.data || []);
+        setDocuments(documentResponse.data || []);
+        setRequirements(requirementResponse.data || []);
+        setError('');
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setUsers([]);
+        setPeriods([]);
+        setDocuments([]);
+        setRequirements([]);
+        setError('Data dashboard belum bisa dimuat.');
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const studentCount = users.filter((user) => normalizeRole(user.role) === 'mahasiswa').length;
+  const lecturerCount = users.filter((user) => normalizeRole(user.role) === 'dosen').length;
+  const coordinatorCount = users.filter((user) => ['koordinator', 'kordinator'].includes(normalizeRole(user.role))).length;
+  const activePeriod = periods.find(isActiveRecord);
+  const activePeriodLabel = activePeriod
+    ? [activePeriod.semester, activePeriod.name || activePeriod.code].filter(Boolean).join(' ')
+    : 'Belum diatur';
+  const accountCreatedThisMonth = users.filter((user) => {
+    if (normalizeRole(user.role) === 'admin' || user.identifier === 'superadmin') return false;
+    const rawDate = user.createdAt || user.created_at;
+    if (!rawDate) return false;
+    const createdAt = new Date(rawDate);
+    const now = new Date();
+    return createdAt.getMonth() === now.getMonth() && createdAt.getFullYear() === now.getFullYear();
+  }).length;
+
+  const stats = [
+    { label: 'Total Mahasiswa', value: String(studentCount), icon: GraduationCap, color: 'text-blue-600', bg: 'bg-blue-100' },
+    { label: 'Total Dosen', value: String(lecturerCount), icon: Users, color: 'text-purple-600', bg: 'bg-purple-100' },
+    { label: 'Koordinator', value: String(coordinatorCount), icon: UserCheck, color: 'text-emerald-600', bg: 'bg-emerald-100' },
+    { label: 'Akun Baru (Bulan Ini)', value: String(accountCreatedThisMonth), icon: UserPlus, color: 'text-amber-600', bg: 'bg-amber-100' },
+    { label: 'Dokumen & Panduan', value: String(documents.length), icon: FileText, color: 'text-indigo-600', bg: 'bg-indigo-100' },
+  ];
+
+  const operationalStatus = [
+    { label: 'Periode Berjalan', value: activePeriodLabel, icon: Calendar, active: Boolean(activePeriod) },
+    { label: 'Tahapan Aktif', value: requirements.length > 0 ? 'Persyaratan tersedia' : 'Belum ada data', icon: CheckCircle, active: requirements.length > 0 },
+    { label: 'Total Dokumen', value: `${documents.length} Dokumen`, icon: FileCheck, active: documents.length > 0 },
+    { label: 'Total Syarat', value: `${requirements.length} Syarat`, icon: Info, active: requirements.length > 0 },
+  ];
+
   return (
     <MainLayout>
       <ContentWrapper
@@ -49,14 +111,20 @@ const AdminDashboardPage: React.FC = () => {
         description="Ringkasan operasional sistem PharmSITA (Tugas Akhir Prodi Farmasi)."
         headerRight={
           <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg shadow-sm text-sm font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            Periode: Genap 2025/2026
+            <span className={`w-2 h-2 rounded-full ${activePeriod ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></span>
+            Periode: {isLoading ? 'Memuat...' : activePeriodLabel}
           </div>
         }
       >
+        {error && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
+            {error}
+          </div>
+        )}
+
         {/* Stats Cards Row */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-          {mockStats.map((stat, index) => {
+          {stats.map((stat, index) => {
             const Icon = stat.icon;
             return (
               <div key={index} className="bg-card border border-border/50 rounded-xl p-4 shadow-sm flex items-center gap-4 hover:border-primary/20 transition-all">
@@ -64,7 +132,7 @@ const AdminDashboardPage: React.FC = () => {
                   <Icon size={22} className="stroke-[2.5]" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-foreground leading-none mb-1">{stat.value}</p>
+                  <p className="text-2xl font-bold text-foreground leading-none mb-1">{isLoading ? '-' : stat.value}</p>
                   <p className="text-xs font-semibold text-muted-foreground">{stat.label}</p>
                 </div>
               </div>
@@ -78,23 +146,14 @@ const AdminDashboardPage: React.FC = () => {
           {/* KIRI: Aktivitas Terkini */}
           <div className="lg:col-span-2 space-y-6">
             <SectionCard title="Aktivitas Admin Terbaru" className="h-full shadow-sm border border-border/50">
-              <div className="space-y-4">
-                {mockActivities.map((activity) => (
-                  <div key={activity.id} className="flex gap-4 p-4 rounded-lg bg-muted/20 border border-border/30 hover:bg-muted/40 transition-colors">
-                    <div className="mt-0.5">
-                      {activity.type === 'user' && <div className="p-2 bg-blue-100 text-blue-600 rounded-full"><Users size={16} /></div>}
-                      {activity.type === 'doc' && <div className="p-2 bg-indigo-100 text-indigo-600 rounded-full"><FileText size={16} /></div>}
-                      {activity.type === 'terms' && <div className="p-2 bg-emerald-100 text-emerald-600 rounded-full"><CheckCircle size={16} /></div>}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-bold text-foreground mb-0.5">{activity.action}</p>
-                      <p className="text-sm text-muted-foreground mb-2">{activity.detail}</p>
-                      <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                        <Clock size={12} /> {activity.time}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+              <div className="flex min-h-[220px] items-center justify-center rounded-lg border border-dashed border-border/70 bg-muted/20 p-6 text-center">
+                <div>
+                  <Clock className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm font-bold text-foreground">Belum ada aktivitas admin</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Aktivitas akan muncul setelah admin mulai membuat akun, mengisi master data, atau memvalidasi workflow.
+                  </p>
+                </div>
               </div>
             </SectionCard>
           </div>
@@ -105,7 +164,7 @@ const AdminDashboardPage: React.FC = () => {
             {/* Status Operasional */}
             <SectionCard title="Status Operasional" className="shadow-sm border border-border/50 bg-card">
               <div className="flex flex-col gap-3">
-                {mockOperationalStatus.map((status, idx) => {
+                {operationalStatus.map((status, idx) => {
                   const SIcon = status.icon;
                   return (
                     <div key={idx} className="flex items-center gap-3 p-3 rounded-lg border border-border/50">
@@ -114,7 +173,7 @@ const AdminDashboardPage: React.FC = () => {
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground font-semibold mb-0.5">{status.label}</p>
-                        <p className={`text-sm font-bold ${status.active ? 'text-foreground' : 'text-foreground'}`}>{status.value}</p>
+                        <p className="text-sm font-bold text-foreground">{isLoading ? 'Memuat...' : status.value}</p>
                       </div>
                     </div>
                   );

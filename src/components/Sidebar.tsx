@@ -101,7 +101,7 @@ const Sidebar: React.FC = () => {
             `}
           >
             <h2 className="font-semibold capitalize">{name}</h2>
-            <p className="text-sm opacity-70">221011400215</p>
+            <p className="text-sm opacity-70 capitalize">{role || "user"}</p>
             <p
               onClick={() => navigateTo(getProfilePath(role))}
               className="text-xs opacity-90 cursor-pointer hover:underline"
