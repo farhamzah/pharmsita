@@ -80,6 +80,7 @@ const requiredEntries = [
   ["docs/uat-scenario-matrix-staging-vps-execution-packet.md", "docs/uat-scenario-matrix-staging-vps-execution-packet.md"],
   ["docs/live-domain-nginx-api-routing-fix-uat-intake.md", "docs/live-domain-nginx-api-routing-fix-uat-intake.md"],
   ["docs/operator-apply-nginx-http-config-live-routing-verification.md", "docs/operator-apply-nginx-http-config-live-routing-verification.md"],
+  ["docs/vps-operator-evidence-intake-after-nginx-apply.md", "docs/vps-operator-evidence-intake-after-nginx-apply.md"],
   ["docs/local-postgresql-runtime-final-verification.md", "docs/local-postgresql-runtime-final-verification.md"],
   ["docs/local-postgresql-backup-restore-drill.md", "docs/local-postgresql-backup-restore-drill.md"],
   ["docs/local-release-bundle-evidence-packet.md", "docs/local-release-bundle-evidence-packet.md"],
