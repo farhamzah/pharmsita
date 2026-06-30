@@ -81,6 +81,7 @@ const requiredEntries = [
   ["docs/live-domain-nginx-api-routing-fix-uat-intake.md", "docs/live-domain-nginx-api-routing-fix-uat-intake.md"],
   ["docs/operator-apply-nginx-http-config-live-routing-verification.md", "docs/operator-apply-nginx-http-config-live-routing-verification.md"],
   ["docs/vps-operator-evidence-intake-after-nginx-apply.md", "docs/vps-operator-evidence-intake-after-nginx-apply.md"],
+  ["docs/vps-operator-output-review-uat-routing-decision.md", "docs/vps-operator-output-review-uat-routing-decision.md"],
   ["docs/local-postgresql-runtime-final-verification.md", "docs/local-postgresql-runtime-final-verification.md"],
   ["docs/local-postgresql-backup-restore-drill.md", "docs/local-postgresql-backup-restore-drill.md"],
   ["docs/local-release-bundle-evidence-packet.md", "docs/local-release-bundle-evidence-packet.md"],
