@@ -2,7 +2,12 @@ import type { ApiAdapter, ApiRequest } from "./api-types";
 import { HttpApiAdapter } from "./http-api-adapter";
 import { MockApiAdapter } from "./mock-api-adapter";
 
-const apiMode = import.meta.env.VITE_API_MODE === "http" ? "http" : "mock";
+const defaultApiMode = import.meta.env.PROD ? "http" : "mock";
+const apiMode = import.meta.env.VITE_API_MODE === "http"
+  ? "http"
+  : import.meta.env.VITE_API_MODE === "mock"
+    ? "mock"
+    : defaultApiMode;
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 export const mockApiAdapter = new MockApiAdapter();

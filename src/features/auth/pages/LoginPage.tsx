@@ -3,6 +3,8 @@ import {
   ArrowLeft,
   Briefcase,
   Check,
+  Eye,
+  EyeOff,
   GraduationCap,
   ShieldCheck,
   UserCheck,
@@ -66,6 +68,9 @@ const LoginComponent: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [showNewPassword, setShowNewPassword] = React.useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
 
   const showMessage = (message: string, color = "text-slate-500") => {
     setMsg(message);
@@ -242,13 +247,24 @@ const LoginComponent: React.FC = () => {
 
         <div>
           <label className="block text-sm mb-2 text-muted-foreground">Password</label>
-          <input
-            name="password"
-            type="password"
-            required
-            placeholder="Enter password"
-            className={inputClass}
-          />
+          <div className="relative">
+            <input
+              name="password"
+              type={showPassword ? "text" : "password"}
+              required
+              placeholder="Enter password"
+              className={`${inputClass} pr-12`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((value) => !value)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+              aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+              title={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+            >
+              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+            </button>
+          </div>
         </div>
         <button
           type="submit"
@@ -314,30 +330,52 @@ const LoginComponent: React.FC = () => {
 
           <div>
             <label className="block text-sm mb-2 text-muted-foreground">Password Baru</label>
-            <input
-              name="newPassword"
-              type="password"
-              minLength={8}
-              required
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Minimal 8 karakter"
-              className={inputClass}
-            />
+            <div className="relative">
+              <input
+                name="newPassword"
+                type={showNewPassword ? "text" : "password"}
+                minLength={8}
+                required
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Minimal 8 karakter"
+                className={`${inputClass} pr-12`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword((value) => !value)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label={showNewPassword ? "Sembunyikan password baru" : "Tampilkan password baru"}
+                title={showNewPassword ? "Sembunyikan password baru" : "Tampilkan password baru"}
+              >
+                {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
           </div>
 
           <div>
             <label className="block text-sm mb-2 text-muted-foreground">Konfirmasi Password</label>
-            <input
-              name="confirmPassword"
-              type="password"
-              minLength={8}
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Ulangi password baru"
-              className={inputClass}
-            />
+            <div className="relative">
+              <input
+                name="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                minLength={8}
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Ulangi password baru"
+                className={`${inputClass} pr-12`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((value) => !value)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label={showConfirmPassword ? "Sembunyikan konfirmasi password" : "Tampilkan konfirmasi password"}
+                title={showConfirmPassword ? "Sembunyikan konfirmasi password" : "Tampilkan konfirmasi password"}
+              >
+                {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
           </div>
 
           <button

@@ -26,6 +26,7 @@ Before running:
 
 const requiredEntries = [
   ["dist", "dist"],
+  ["backend/package.json", "backend/package.json"],
   ["backend/dist", "backend/dist"],
   ["backend/database/migrations", "backend/database/migrations"],
   ["backend/database/README.md", "backend/database/README.md"],
