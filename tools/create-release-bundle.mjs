@@ -78,6 +78,7 @@ const requiredEntries = [
   ["docs/vps-preflight-package-handoff-operator-checklist.md", "docs/vps-preflight-package-handoff-operator-checklist.md"],
   ["docs/vps-dry-run-evidence-packet-clean-artifact.md", "docs/vps-dry-run-evidence-packet-clean-artifact.md"],
   ["docs/uat-scenario-matrix-staging-vps-execution-packet.md", "docs/uat-scenario-matrix-staging-vps-execution-packet.md"],
+  ["docs/live-domain-nginx-api-routing-fix-uat-intake.md", "docs/live-domain-nginx-api-routing-fix-uat-intake.md"],
   ["docs/local-postgresql-runtime-final-verification.md", "docs/local-postgresql-runtime-final-verification.md"],
   ["docs/local-postgresql-backup-restore-drill.md", "docs/local-postgresql-backup-restore-drill.md"],
   ["docs/local-release-bundle-evidence-packet.md", "docs/local-release-bundle-evidence-packet.md"],
