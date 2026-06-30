@@ -83,6 +83,7 @@ const requiredEntries = [
   ["docs/vps-operator-evidence-intake-after-nginx-apply.md", "docs/vps-operator-evidence-intake-after-nginx-apply.md"],
   ["docs/vps-operator-output-review-uat-routing-decision.md", "docs/vps-operator-output-review-uat-routing-decision.md"],
   ["docs/vps-routing-remediation-404-to-200.md", "docs/vps-routing-remediation-404-to-200.md"],
+  ["docs/operator-apply-vps-routing-remediation-evidence-capture.md", "docs/operator-apply-vps-routing-remediation-evidence-capture.md"],
   ["docs/local-postgresql-runtime-final-verification.md", "docs/local-postgresql-runtime-final-verification.md"],
   ["docs/local-postgresql-backup-restore-drill.md", "docs/local-postgresql-backup-restore-drill.md"],
   ["docs/local-release-bundle-evidence-packet.md", "docs/local-release-bundle-evidence-packet.md"],
