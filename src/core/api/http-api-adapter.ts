@@ -6,7 +6,11 @@ const buildUrl = (
   path: string,
   query?: ApiRequest["query"]
 ) => {
-  const url = new URL(`${baseUrl.replace(/\/$/, "")}${path}`);
+  const rawUrl = `${baseUrl.replace(/\/$/, "")}${path}`;
+  const url = new URL(
+    rawUrl,
+    typeof window === "undefined" ? "http://localhost" : window.location.origin
+  );
 
   Object.entries(query || {}).forEach(([key, value]) => {
     if (value !== null && value !== undefined) {
