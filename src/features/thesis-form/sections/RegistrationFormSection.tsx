@@ -17,24 +17,35 @@ import { SectionCard } from "../../../components/ui/SectionCard";
 import { mockJenisTA } from "../../../mock-data/thesis-types";
 import { cn } from "@/lib/utils";
 import { isDemoModeEnabled } from "@/lib/demo-mode";
-import { studentWorkflowApi } from "../../../core/api/domain";
+import { adminApi, studentWorkflowApi } from "../../../core/api/domain";
 import {
   DEFAULT_THESIS_SUBMISSIONS,
   type ThesisSubmission,
 } from "../../student/services/student-workflow-service";
 
-// Define Dosen/Lecturer List locally for usulan
-const DOSEN_LIST = [
-  { id: "l_1", nama: "Dr. Apt. Rina Marlina, M.Farm." },
-  { id: "l_2", nama: "Dr. Apt. Budi Santoso, M.Si." },
-  { id: "l_3", nama: "Dr. Apt. Siti Nurhayati, M.Farm." },
-  { id: "l_4", nama: "Apt. Ahmad Subagja, M.Sc." },
-  { id: "l_5", nama: "Apt. Citra Dewi, M.Farm." }
-];
+type ThesisTypeOption = {
+  id: string;
+  name: string;
+  skema: "Skripsi" | "Non Skripsi";
+  status: "Aktif" | "Nonaktif";
+};
+
+type LecturerOption = {
+  id: string;
+  name: string;
+  identifier: string;
+  status: "Aktif" | "Nonaktif";
+};
+
+const demoThesisTypes = isDemoModeEnabled
+  ? (mockJenisTA as ThesisTypeOption[])
+  : [];
 
 const FormPendaftaranSection: React.FC = () => {
   // Form State
   const [skema, setSkema] = useState<"Skripsi" | "Non Skripsi">("Skripsi");
+  const [thesisTypes, setThesisTypes] = useState<ThesisTypeOption[]>(demoThesisTypes);
+  const [lecturers, setLecturers] = useState<LecturerOption[]>([]);
   const [jenisTA, setJenisTA] = useState<string>("");
   const [judulTA, setJudulTA] = useState<string>("");
   const [deskripsiTA, setDeskripsiTA] = useState<string>("");
@@ -69,9 +80,30 @@ const FormPendaftaranSection: React.FC = () => {
       })
       .catch(() => {
         if (mounted) {
-          setSubmissions(DEFAULT_THESIS_SUBMISSIONS);
+          setSubmissions(isDemoModeEnabled ? DEFAULT_THESIS_SUBMISSIONS : []);
         }
       });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    Promise.all([
+      adminApi.listPublicThesisTypes().catch(() => ({ data: demoThesisTypes })),
+      adminApi.listPublicLecturers().catch(() => ({ data: [] as LecturerOption[] })),
+    ]).then(([typesResponse, lecturersResponse]) => {
+      if (!mounted) return;
+      setThesisTypes(typesResponse.data as ThesisTypeOption[]);
+      setLecturers(
+        (lecturersResponse.data as LecturerOption[]).filter(
+          (lecturer) => lecturer.status === "Aktif"
+        )
+      );
+    });
 
     return () => {
       mounted = false;
@@ -96,7 +128,7 @@ const FormPendaftaranSection: React.FC = () => {
 
   // Set default jenisTA based on skema
   useEffect(() => {
-    const filteredTypes = mockJenisTA.filter(
+    const filteredTypes = thesisTypes.filter(
       (item) => item.skema === skema && item.status === "Aktif"
     );
     if (filteredTypes.length > 0) {
@@ -104,7 +136,7 @@ const FormPendaftaranSection: React.FC = () => {
     } else {
       setJenisTA("");
     }
-  }, [skema]);
+  }, [skema, thesisTypes]);
 
   // Handle Form Submit
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -132,7 +164,7 @@ const FormPendaftaranSection: React.FC = () => {
       judulTA: judulTA.trim(),
       deskripsiTA: deskripsiTA.trim(),
       pembimbing1,
-      pembimbing2: "Dr. Apt. Budi Santoso, M.Si. (Ditentukan Koordinator)",
+      pembimbing2: "Ditentukan Koordinator",
       status: "Sedang Proses Validasi",
       buktiFile: buktiFileName || "kwitansi_pembayaran_ta.pdf"
     };
@@ -176,7 +208,7 @@ const FormPendaftaranSection: React.FC = () => {
 
   // Simulator: Reset Riwayat
   const handleResetSim = () => {
-    saveSubmissions(DEFAULT_THESIS_SUBMISSIONS);
+    saveSubmissions(isDemoModeEnabled ? DEFAULT_THESIS_SUBMISSIONS : []);
     triggerToast("Riwayat pengajuan berhasil direset ke status bawaan.");
   };
 
@@ -321,7 +353,7 @@ const FormPendaftaranSection: React.FC = () => {
               </label>
 
               <div className="border rounded-xl p-4 bg-muted/20 border-border/70 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {mockJenisTA
+                {thesisTypes
                   .filter((item) => item.skema === (skema === "Skripsi" ? "Skripsi" : "Non Skripsi") && item.status === "Aktif")
                   .map((item) => {
                     const isChecked = jenisTA === item.name;
@@ -423,9 +455,9 @@ const FormPendaftaranSection: React.FC = () => {
                     )}
                   >
                     <option value="">-- Pilih Usulan Pembimbing 1 --</option>
-                    {DOSEN_LIST.map((dosen) => (
-                      <option key={dosen.id} value={dosen.nama}>
-                        {dosen.nama}
+                    {lecturers.map((dosen) => (
+                      <option key={dosen.id} value={dosen.name}>
+                        {dosen.name}
                       </option>
                     ))}
                   </select>
@@ -437,7 +469,7 @@ const FormPendaftaranSection: React.FC = () => {
                   <input
                     type="text"
                     disabled
-                    value="Dr. Apt. Budi Santoso, M.Si. (Ditentukan Koordinator)"
+                    value="Ditentukan Koordinator"
                     className="w-full text-xs border rounded-xl px-3 py-2.5 bg-muted text-muted-foreground/80 cursor-not-allowed border-dashed"
                   />
                 </div>

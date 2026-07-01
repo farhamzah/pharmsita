@@ -2,7 +2,7 @@
 export default function DataTableEmpty() {
   return (
     <div className="py-10 text-center text-sm text-muted-foreground">
-      No data available
+      Belum ada data.
     </div>
   );
 }

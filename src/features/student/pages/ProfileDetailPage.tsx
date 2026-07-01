@@ -1,12 +1,27 @@
 import ContentWrapper from "../../../components/ContentWrapper";
 import MainLayout from "../../../layouts/MainLayout";
 import { UnifiedProfileView } from "../../../components/shared/UnifiedProfileView";
-import { mockStudentProfiles } from "../../../mock-data/profiles";
+import type { StudentProfile } from "../../../mock-data/profiles";
+import { AcademicStage, Roles } from "../../../mock-data/enums";
 import { useSessionProfile } from "../../shared/hooks/useSessionProfile";
+
+const emptyStudentProfile: StudentProfile = {
+  id: "",
+  name: "",
+  email: "",
+  phone: "",
+  role: Roles.STUDENT,
+  status: "Aktif",
+  nim: "",
+  programStudi: "",
+  angkatan: "",
+  skemaTA: "Skripsi",
+  tahapanAktif: AcademicStage.PENGAJUAN,
+};
 
 const DetailProfilPage = () => {
   const { profile: studentProfile, isLoading, error, saveProfile } = useSessionProfile(
-    mockStudentProfiles[0]
+    emptyStudentProfile
   );
 
   return (

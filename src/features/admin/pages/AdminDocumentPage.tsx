@@ -1,19 +1,54 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ContentWrapper from '../../../components/ContentWrapper';
 import MainLayout from '../../../layouts/MainLayout';
 import DataTable from '../../../components/ui/DataTable';
 import Button from '../../../components/ui/Button';
 import BaseModal from '../../../components/ui/BaseModal';
 import { Plus, Download, UploadCloud, FileIcon } from 'lucide-react';
+import { adminApi } from '../../../core/api/domain';
+import type { AdminMasterRecord } from '../../../core/services/admin-data-service';
 
-const mockDocuments = [
-  { id: '1', title: 'Template Proposal TA v2.0', category: 'Template', version: '2.0', date: '01 Mar 2026' },
-  { id: '2', title: 'Jurnal Panduan Penulisan', category: 'Panduan', version: '1.5', date: '20 Feb 2026' },
-  { id: '3', title: 'Borang Penilaian Seminar', category: 'Formulir', version: '1.0', date: '15 Jan 2026' },
-];
+type DocumentRow = {
+  id: string;
+  title: string;
+  category: string;
+  version: string;
+  date: string;
+};
+
+const formatDocumentRow = (record: AdminMasterRecord): DocumentRow => ({
+  id: String(record.id || record.name || crypto.randomUUID()),
+  title: String(record.title || record.name || '-'),
+  category: String(record.category || record.isRequired || record.allowedTypes || '-'),
+  version: String(record.version || record.status || '-'),
+  date: String(record.updatedAt || record.updated_at || record.createdAt || record.created_at || '-'),
+});
 
 const AdminDocumentPage: React.FC = () => {
   const [openModal, setOpenModal] = useState(false);
+  const [documents, setDocuments] = useState<DocumentRow[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    adminApi
+      .listSupportingDocuments()
+      .then((response) => {
+        if (!mounted) return;
+        setDocuments(response.data.map(formatDocumentRow));
+        setLoadError(null);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setDocuments([]);
+        setLoadError('Dokumen pendukung belum bisa dimuat dari backend.');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <MainLayout>
@@ -29,8 +64,13 @@ const AdminDocumentPage: React.FC = () => {
           </Button>
         }
       >
+        {loadError && (
+          <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            {loadError}
+          </p>
+        )}
         <DataTable
-          data={mockDocuments}
+          data={documents}
           columns={[
             { key: 'title', label: 'Nama Dokumen' },
             { 

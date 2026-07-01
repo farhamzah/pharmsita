@@ -1,90 +1,21 @@
-// ============================================================
-// Service: Revisi Workflow
-// State management untuk tahapan Revisi Seminar Proposal & Revisi Sidang Akhir
-// Menggunakan storage mock untuk persistensi sementara.
-// ============================================================
-
-import type { RevisiData } from "../types/revisi";
 import type { ChatMessage } from "../types/bimbingan";
+import type { RevisiData } from "../types/revisi";
 import { storageService } from "../../../core/services/storage-service";
 
 const STORAGE_KEY_PREFIX = "student_revisi_v1_";
 
-const EXAMINER_1 = "Dr. Budi Harto, M.Farm.";
-const EXAMINER_2 = "Dr. Andi Wijaya, M.Si.";
+const createEmptyRevisiData = (stageId: "revisi-proposal" | "revisi-sidang"): RevisiData => ({
+  stageId,
+  penguji1Approved: false,
+  penguji2Approved: false,
+  ketuaSidangStatus: "pending",
+  items: [],
+  finalFile: null,
+  submittedAt: null,
+});
 
-const DEFAULT_REVISION_TOPICS_PROPOSAL = [
-  {
-    id: 1,
-    title: "Bab 1: Perjelas latar belakang pemilihan ekstrak daun sirih dibanding tanaman antiseptik lain.",
-    topik: "Latar Belakang Daun Sirih",
-    materi: "Perjelas latar belakang pemilihan ekstrak daun sirih dibanding tanaman antiseptik lain.",
-    assignedTo: EXAMINER_1,
-    status: "pending" as const,
-    chats: [],
-  },
-  {
-    id: 2,
-    title: "Bab 2: Mutakhirkan pustaka jurnal 5 tahun terakhir untuk metode uji aktivitas bakteri.",
-    topik: "Tinjauan Pustaka Aktivitas Bakteri",
-    materi: "Mutakhirkan pustaka jurnal 5 tahun terakhir untuk metode uji aktivitas bakteri.",
-    assignedTo: EXAMINER_1,
-    status: "pending" as const,
-    chats: [],
-  },
-  {
-    id: 3,
-    title: "Bab 3: Tambahkan penjelasan rinci mengenai variasi konsentrasi basis gel (Carbopol 940).",
-    topik: "Formulasi Carbopol 940",
-    materi: "Tambahkan penjelasan rinci mengenai variasi konsentrasi basis gel (Carbopol 940).",
-    assignedTo: EXAMINER_2,
-    status: "pending" as const,
-    chats: [],
-  },
-  {
-    id: 4,
-    title: "Bab 4: Tambahkan rencana analisis statistik ANOVA satu arah untuk uji stabilitas fisik gel.",
-    topik: "Analisis Statistik ANOVA",
-    materi: "Tambahkan rencana analisis statistik ANOVA satu arah untuk uji stabilitas fisik gel.",
-    assignedTo: EXAMINER_2,
-    status: "pending" as const,
-    chats: [],
-  },
-];
-
-const DEFAULT_REVISION_TOPICS_SIDANG = [
-  {
-    id: 1,
-    title: "Bab 4: Koreksi kesimpulan mengenai keefektifan antibakteri gel daun sirih.",
-    topik: "Kesimpulan Keefektifan Antibakteri",
-    materi: "Koreksi kesimpulan mengenai keefektifan antibakteri gel daun sirih.",
-    assignedTo: EXAMINER_1,
-    status: "pending" as const,
-    chats: [],
-  },
-  {
-    id: 2,
-    title: "Bab 5: Tambahkan saran untuk pengujian in-vivo di laboratorium lanjutan.",
-    topik: "Saran Pengujian In-Vivo",
-    materi: "Tambahkan saran untuk pengujian in-vivo di laboratorium lanjutan.",
-    assignedTo: EXAMINER_2,
-    status: "pending" as const,
-    chats: [],
-  },
-];
-
-function createDefaultData(stageId: "revisi-proposal" | "revisi-sidang"): RevisiData {
-  const isProposal = stageId === "revisi-proposal";
-  return {
-    stageId,
-    penguji1Approved: false,
-    penguji2Approved: false,
-    ketuaSidangStatus: "pending",
-    items: isProposal ? DEFAULT_REVISION_TOPICS_PROPOSAL : DEFAULT_REVISION_TOPICS_SIDANG,
-    finalFile: null,
-    submittedAt: null,
-  };
-}
+const isLegacySeedData = (data: RevisiData): boolean =>
+  data.items.length > 0 && !data.finalFile && !data.submittedAt;
 
 class RevisiService {
   private getKey(stageId: string): string {
@@ -92,13 +23,20 @@ class RevisiService {
   }
 
   getData(stageId: "revisi-proposal" | "revisi-sidang"): RevisiData {
-    const saved = storageService.get<RevisiData>(this.getKey(stageId));
-    if (saved) {
+    const key = this.getKey(stageId);
+    const saved = storageService.get<RevisiData>(key);
+
+    if (saved && !isLegacySeedData(saved)) {
       return saved;
     }
-    const defaultData = createDefaultData(stageId);
-    this.save(stageId, defaultData);
-    return defaultData;
+
+    if (saved) {
+      storageService.remove(key);
+    }
+
+    const emptyData = createEmptyRevisiData(stageId);
+    this.save(stageId, emptyData);
+    return emptyData;
   }
 
   private save(stageId: string, data: RevisiData): void {
@@ -111,12 +49,12 @@ class RevisiService {
     status: "pending" | "in progress" | "done"
   ): RevisiData {
     const data = this.getData(stageId);
-    const item = data.items.find((i) => i.id === itemId);
+    const item = data.items.find((entry) => entry.id === itemId);
     if (item) {
       item.status = status;
     }
     this.save(stageId, data);
-    return this.getData(stageId);
+    return data;
   }
 
   submitPenyelesaian(
@@ -126,7 +64,7 @@ class RevisiService {
     penyelesaianLink: string
   ): RevisiData {
     const data = this.getData(stageId);
-    const item = data.items.find((i) => i.id === itemId);
+    const item = data.items.find((entry) => entry.id === itemId);
     if (item) {
       item.status = "in progress";
       item.penyelesaian = penyelesaian;
@@ -134,7 +72,7 @@ class RevisiService {
       item.submittedAt = new Date().toISOString();
     }
     this.save(stageId, data);
-    return this.getData(stageId);
+    return data;
   }
 
   addChatMessage(
@@ -145,7 +83,7 @@ class RevisiService {
     message: string
   ): RevisiData {
     const data = this.getData(stageId);
-    const item = data.items.find((i) => i.id === itemId);
+    const item = data.items.find((entry) => entry.id === itemId);
     if (item) {
       const newChat: ChatMessage = {
         id: `rc_${stageId}_${itemId}_${Date.now()}`,
@@ -155,14 +93,12 @@ class RevisiService {
         timestamp: new Date().toISOString(),
       };
       item.chats.push(newChat);
-
-      // Otomatis ubah status ke 'in progress' jika mahasiswa/dosen membalas chat
       if (item.status === "pending") {
         item.status = "in progress";
       }
     }
     this.save(stageId, data);
-    return this.getData(stageId);
+    return data;
   }
 
   updateApproval(
@@ -175,18 +111,18 @@ class RevisiService {
       data.penguji1Approved = !!status;
     } else if (role === "penguji2") {
       data.penguji2Approved = !!status;
-    } else if (role === "ketua-sidang") {
+    } else {
       data.ketuaSidangStatus = status as "pending" | "approved" | "rejected";
     }
     this.save(stageId, data);
-    return this.getData(stageId);
+    return data;
   }
 
   uploadFinalFile(stageId: "revisi-proposal" | "revisi-sidang", fileName: string): RevisiData {
     const data = this.getData(stageId);
     data.finalFile = fileName;
     this.save(stageId, data);
-    return this.getData(stageId);
+    return data;
   }
 
   simulateAllApproved(stageId: "revisi-proposal" | "revisi-sidang"): RevisiData {
@@ -198,7 +134,7 @@ class RevisiService {
     data.penguji2Approved = true;
     data.ketuaSidangStatus = "approved";
     this.save(stageId, data);
-    return this.getData(stageId);
+    return data;
   }
 
   reset(stageId: "revisi-proposal" | "revisi-sidang"): RevisiData {

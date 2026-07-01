@@ -1,17 +1,43 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ContentWrapper from '../../../components/ContentWrapper';
 import MainLayout from '../../../layouts/MainLayout';
 import { SectionCard } from '../../../components/ui/SectionCard';
 import Button from '../../../components/ui/Button';
 import { Plus, GripVertical, Edit2, Trash2 } from 'lucide-react';
-import { mockMasterRequirements, type RequirementStage } from '../../../mock-data/requirements';
+import { adminApi } from '../../../core/api/domain';
+import type { AdminMasterRecord } from '../../../core/services/admin-data-service';
+
+type RequirementStage = 'Persyaratan Awal' | 'Seminar Proposal' | 'Sidang Akhir' | 'Yudisium';
 
 const STAGES: RequirementStage[] = ['Persyaratan Awal', 'Seminar Proposal', 'Sidang Akhir', 'Yudisium'];
 
 const AdminTermsPage: React.FC = () => {
   const [activeStage, setActiveStage] = useState<RequirementStage>(STAGES[0]);
+  const [allRequirements, setAllRequirements] = useState<AdminMasterRecord[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const requirements = mockMasterRequirements.filter(req => req.tahap === activeStage);
+  useEffect(() => {
+    let mounted = true;
+
+    adminApi
+      .listRequirementDefinitions()
+      .then((response) => {
+        if (!mounted) return;
+        setAllRequirements(response.data);
+        setLoadError(null);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setAllRequirements([]);
+        setLoadError('Persyaratan belum bisa dimuat dari backend.');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const requirements = allRequirements.filter(req => req.tahap === activeStage);
 
   return (
     <MainLayout>
@@ -19,6 +45,11 @@ const AdminTermsPage: React.FC = () => {
         title="Syarat & Ketentuan"
         description="Mengatur checklist persyaratan per tahapan tugas akhir yang harus dipenuhi mahasiswa."
       >
+        {loadError && (
+          <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            {loadError}
+          </p>
+        )}
         <div className="flex flex-col md:flex-row gap-6">
           {/* Sidebar Menu */}
           <div className="w-full md:w-64 flex flex-col gap-1">
@@ -52,7 +83,7 @@ const AdminTermsPage: React.FC = () => {
                     <div key={req.id} className="flex items-center gap-3 p-3 border rounded-lg bg-card hover:border-primary/50 transition-colors">
                       <GripVertical size={16} className="text-muted-foreground cursor-grab" />
                       <div className="flex-1">
-                        <p className="font-medium text-sm">{i + 1}. {req.namaPersyaratan}</p>
+                        <p className="font-medium text-sm">{i + 1}. {req.namaPersyaratan || req.name || '-'}</p>
                         <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${req.wajib ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
                           {req.wajib ? 'Wajib' : 'Opsional'}
                         </span>

@@ -4,11 +4,9 @@ import ContentWrapper from '../../../components/ContentWrapper';
 import { CoordinatorStatCards } from '../components/CoordinatorStatCards';
 import { QuickActionList } from '../components/QuickActionList';
 import { SectionCard } from '../../../components/ui/SectionCard';
-import { AgendaTerdekat } from '../../student/components/dashboard/UpcomingAgenda';
 import {
   Activity,
   AlertCircle,
-  Bell,
   CalendarDays,
   CheckCircle,
   FileText,
@@ -19,51 +17,25 @@ import {
 import {
   coordinatorWorkflowApi,
   type CoordinatorLifecycleSummaryItem,
+  type LecturerDirectoryItem,
 } from '../../../core/api/domain';
 import { navigateTo } from '../../../router/Router';
 
-const lifecycleFallback: CoordinatorLifecycleSummaryItem[] = [
-  {
-    stageCode: 'PROPOSAL_GUIDANCE',
-    stageName: 'Bimbingan Proposal',
-    lifecycleStatus: 'IN_PROGRESS',
-    studentCount: 1,
-    activeThesisCount: 1,
-    completedThesisCount: 0,
-  },
-  {
-    stageCode: 'PROPOSAL_SEMINAR',
-    stageName: 'Seminar Proposal',
-    lifecycleStatus: 'IN_PROGRESS',
-    studentCount: 1,
-    activeThesisCount: 1,
-    completedThesisCount: 0,
-  },
-  {
-    stageCode: 'FINAL_DEFENSE',
-    stageName: 'Sidang Akhir',
-    lifecycleStatus: 'IN_PROGRESS',
-    studentCount: 1,
-    activeThesisCount: 1,
-    completedThesisCount: 0,
-  },
-  {
-    stageCode: 'FINAL_REVISION',
-    stageName: 'Revisi Sidang Akhir',
-    lifecycleStatus: 'IN_PROGRESS',
-    studentCount: 1,
-    activeThesisCount: 1,
-    completedThesisCount: 0,
-  },
-  {
-    stageCode: 'COMPLETED',
-    stageName: 'Selesai',
-    lifecycleStatus: 'COMPLETED',
-    studentCount: 1,
-    activeThesisCount: 0,
-    completedThesisCount: 1,
-  },
-];
+const lifecycleFallback: CoordinatorLifecycleSummaryItem[] = [];
+
+const summarizeLecturerQuota = (lecturers: LecturerDirectoryItem[]) => {
+  const full = lecturers.filter(
+    (lecturer) =>
+      lecturer.quotaLimit > 0 &&
+      Math.max(lecturer.p1Active, lecturer.p2Active) >= lecturer.quotaLimit
+  ).length;
+
+  return {
+    total: lecturers.length,
+    full,
+    available: Math.max(0, lecturers.length - full),
+  };
+};
 
 const formatLifecycleStatus = (status: string) =>
   status
@@ -77,7 +49,12 @@ export const CoordinatorDashboardPage: React.FC = () => {
     useState<CoordinatorLifecycleSummaryItem[]>(lifecycleFallback);
   const [isLifecycleLoading, setIsLifecycleLoading] = useState(true);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
-  const [lifecycleSource, setLifecycleSource] = useState<string>('fallback');
+  const [lifecycleSource, setLifecycleSource] = useState<string>('api');
+  const [quotaSummary, setQuotaSummary] = useState({
+    total: 0,
+    full: 0,
+    available: 0,
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -87,15 +64,15 @@ export const CoordinatorDashboardPage: React.FC = () => {
       .then((response) => {
         if (!isMounted) return;
 
-        setLifecycleSummary(response.data.length > 0 ? response.data : lifecycleFallback);
+        setLifecycleSummary(response.data);
         setLifecycleSource(response.meta?.source || 'api');
         setLifecycleError(null);
       })
       .catch((error) => {
         if (!isMounted) return;
 
-        setLifecycleSummary(lifecycleFallback);
-        setLifecycleSource('fallback');
+        setLifecycleSummary([]);
+        setLifecycleSource('api');
         setLifecycleError(
           error instanceof Error
             ? error.message
@@ -106,6 +83,25 @@ export const CoordinatorDashboardPage: React.FC = () => {
         if (isMounted) {
           setIsLifecycleLoading(false);
         }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    coordinatorWorkflowApi
+      .listLecturers()
+      .then((response) => {
+        if (!isMounted) return;
+        setQuotaSummary(summarizeLecturerQuota(response.data));
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setQuotaSummary({ total: 0, full: 0, available: 0 });
       });
 
     return () => {
@@ -135,9 +131,9 @@ export const CoordinatorDashboardPage: React.FC = () => {
   );
 
   const quickActions = [
-    { label: 'Validasi Pengajuan Baru', count: 5, path: 'kordinator/pengajuan', icon: <FileText className="w-4 h-4 text-primary" /> },
+    { label: 'Validasi Pengajuan Baru', count: 0, path: 'kordinator/pengajuan', icon: <FileText className="w-4 h-4 text-primary" /> },
     { label: 'Validasi Seminar Proposal', count: lifecycleTotals.proposalSeminar, path: 'kordinator/tahapan-akademik', icon: <GraduationCap className="w-4 h-4 text-purple-600" /> },
-    { label: 'Tetapkan Jadwal Sidang', count: 1, path: 'kordinator/penjadwalan', icon: <CalendarDays className="w-4 h-4 text-amber-600" /> },
+    { label: 'Tetapkan Jadwal Sidang', count: 0, path: 'kordinator/penjadwalan', icon: <CalendarDays className="w-4 h-4 text-amber-600" /> },
   ];
 
   const dashboardStats = [
@@ -171,11 +167,11 @@ export const CoordinatorDashboardPage: React.FC = () => {
     },
   ];
 
-  const recentNotifications = [
-    { label: 'Budi Santoso merevisi pengajuan TA', path: 'kordinator/pengajuan/detail/sub-1', icon: <Bell className="w-4 h-4 text-primary" /> },
-    { label: 'Siti Aminah mengunggah dokumen Sempro', path: 'kordinator/tahapan-akademik', icon: <Bell className="w-4 h-4 text-primary" /> },
-    { label: 'Jadwal sidang Andi Wijaya disetujui Penguji', path: 'kordinator/penjadwalan', icon: <Bell className="w-4 h-4 text-primary" /> },
-  ];
+  const recentNotifications: {
+    label: string;
+    path: string;
+    icon: React.ReactNode;
+  }[] = [];
 
   return (
     <RoleLayoutComponent>
@@ -230,7 +226,7 @@ export const CoordinatorDashboardPage: React.FC = () => {
                   ) : lifecycleError ? (
                     <>
                       <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
-                      <span>Menggunakan fallback dashboard.</span>
+                      <span>{lifecycleError}</span>
                     </>
                   ) : (
                     <>
@@ -242,7 +238,11 @@ export const CoordinatorDashboardPage: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                {lifecycleSummary.map((item) => {
+                {lifecycleSummary.length === 0 ? (
+                  <div className="lg:col-span-2 rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                    Belum ada data lifecycle tugas akhir.
+                  </div>
+                ) : lifecycleSummary.map((item) => {
                   const width = `${Math.max(8, Math.round((item.studentCount / maxLifecycleStudents) * 100))}%`;
 
                   return (
@@ -299,37 +299,22 @@ export const CoordinatorDashboardPage: React.FC = () => {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center text-sm border-b border-border/50 pb-2">
                     <span className="font-medium text-muted-foreground">Total Dosen Pembimbing</span>
-                    <span className="font-bold text-lg">15</span>
+                    <span className="font-bold text-lg">{quotaSummary.total}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm border-b border-border/50 pb-2 text-rose-600 dark:text-rose-400">
                     <span className="font-medium">Dosen dengan Kuota Penuh</span>
-                    <span className="font-bold text-lg">3</span>
+                    <span className="font-bold text-lg">{quotaSummary.full}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm text-emerald-600 dark:text-emerald-400">
                     <span className="font-medium">Dosen Tersedia (Ada Sisa Kuota)</span>
-                    <span className="font-bold text-lg">12</span>
+                    <span className="font-bold text-lg">{quotaSummary.available}</span>
                   </div>
                 </div>
               </SectionCard>
 
               <SectionCard title="Agenda Terdekat">
-                <div className="space-y-4">
-                  <AgendaTerdekat
-                    agenda="Seminar Proposal - Andi Wijaya"
-                    tanggal="Rabu, 08 April 2026"
-                    waktu="09.00 - 10.30 WIB"
-                    ruang="Ruang Sidang Dosen 203"
-                    lokasi="Gedung Teknik Informatika"
-                    roleLabel="Koordinator"
-                  />
-                  <AgendaTerdekat
-                    agenda="Sidang Akhir Skripsi - Rina Marlina"
-                    tanggal="Kamis, 09 April 2026"
-                    waktu="13.30 - 15.00 WIB"
-                    ruang="Ruang Sidang Utama 101"
-                    lokasi="Gedung Rektorat"
-                    roleLabel="Koordinator"
-                  />
+                <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                  Belum ada agenda terdekat.
                 </div>
               </SectionCard>
             </div>

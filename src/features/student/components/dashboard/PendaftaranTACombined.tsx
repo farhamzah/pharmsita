@@ -33,14 +33,6 @@ import {
   type ThesisSubmission,
 } from "../../services/student-workflow-service";
 
-const DOSEN_LIST = [
-  { id: "l_1", nama: "Dr. Apt. Rina Marlina, M.Farm." },
-  { id: "l_2", nama: "Dr. Apt. Budi Santoso, M.Si." },
-  { id: "l_3", nama: "Dr. Apt. Siti Nurhayati, M.Farm." },
-  { id: "l_4", nama: "Apt. Ahmad Subagja, M.Sc." },
-  { id: "l_5", nama: "Apt. Citra Dewi, M.Farm." }
-];
-
 type ThesisTypeOption = {
   id: string;
   name: string;
@@ -57,13 +49,10 @@ type LecturerOption = {
   status: "Aktif" | "Nonaktif";
 };
 
-const fallbackLecturers: LecturerOption[] = DOSEN_LIST.map((dosen) => ({
-  id: dosen.id,
-  name: dosen.nama,
-  identifier: dosen.id,
-  role: "dosen",
-  status: "Aktif",
-}));
+const demoThesisTypes = isDemoModeEnabled
+  ? (mockJenisTA as ThesisTypeOption[])
+  : [];
+const demoLecturers: LecturerOption[] = [];
 
 const formatRegistrationDate = (value?: string | null) => {
   if (!value) {
@@ -138,14 +127,12 @@ export const PendaftaranTACombined: React.FC = () => {
   // Form State
   const [driveLinkInput, setDriveLinkInput] = useState<string>("");
   const [skema, setSkema] = useState<"Skripsi" | "Non Skripsi">("Skripsi");
-  const [thesisTypes, setThesisTypes] = useState<ThesisTypeOption[]>(
-    mockJenisTA as ThesisTypeOption[]
-  );
+  const [thesisTypes, setThesisTypes] = useState<ThesisTypeOption[]>(demoThesisTypes);
   const [thesisTypeId, setThesisTypeId] = useState<string>("");
   const [jenisTA, setJenisTA] = useState<string>("");
   const [judulTA, setJudulTA] = useState<string>("");
   const [deskripsiTA, setDeskripsiTA] = useState<string>("");
-  const [lecturers, setLecturers] = useState<LecturerOption[]>(fallbackLecturers);
+  const [lecturers, setLecturers] = useState<LecturerOption[]>(demoLecturers);
   const [pembimbing1Id, setPembimbing1Id] = useState<string>("");
   const [pembimbing1, setPembimbing1] = useState<string>("");
   const [buktiFileName, setBuktiFileName] = useState<string>("");
@@ -174,10 +161,10 @@ export const PendaftaranTACombined: React.FC = () => {
         .catch(() => ({ data: null })),
       adminApi
         .listPublicThesisTypes()
-        .catch(() => ({ data: mockJenisTA as ThesisTypeOption[] })),
+        .catch(() => ({ data: demoThesisTypes })),
       adminApi
         .listPublicLecturers()
-        .catch(() => ({ data: fallbackLecturers })),
+        .catch(() => ({ data: demoLecturers })),
     ])
       .then(([reqResponse, registrationResponse, thesisTypesResponse, lecturersResponse]) => {
         if (!mounted) return;
@@ -189,7 +176,10 @@ export const PendaftaranTACombined: React.FC = () => {
         const activeDriveLink =
           registration?.requirementDriveLink || reqResponse.data?.driveLink || "";
 
-        setRequirements(reqResponse.data?.requirements || DEFAULT_INITIAL_REQUIREMENTS);
+        setRequirements(
+          reqResponse.data?.requirements ||
+          (isDemoModeEnabled ? DEFAULT_INITIAL_REQUIREMENTS : [])
+        );
         setDriveLink(activeDriveLink);
         setDriveLinkInput(activeDriveLink);
         setSubmissions(registrationSubmission ? [registrationSubmission] : []);
@@ -201,12 +191,12 @@ export const PendaftaranTACombined: React.FC = () => {
       .catch(() => {
         if (!mounted) return;
 
-        setRequirements(DEFAULT_INITIAL_REQUIREMENTS);
+        setRequirements(isDemoModeEnabled ? DEFAULT_INITIAL_REQUIREMENTS : []);
         setDriveLink("");
         setDriveLinkInput("");
-        setSubmissions(DEFAULT_THESIS_SUBMISSIONS);
-        setThesisTypes(mockJenisTA as ThesisTypeOption[]);
-        setLecturers(fallbackLecturers);
+        setSubmissions(isDemoModeEnabled ? DEFAULT_THESIS_SUBMISSIONS : []);
+        setThesisTypes(demoThesisTypes);
+        setLecturers(demoLecturers);
       });
 
     return () => {
@@ -431,10 +421,11 @@ export const PendaftaranTACombined: React.FC = () => {
   };
 
   const handleResetReqSim = () => {
-    setRequirements(DEFAULT_INITIAL_REQUIREMENTS);
+    const resetRequirements = isDemoModeEnabled ? DEFAULT_INITIAL_REQUIREMENTS : [];
+    setRequirements(resetRequirements);
     setDriveLink("");
     setDriveLinkInput("");
-    persistInitialRequirements(DEFAULT_INITIAL_REQUIREMENTS, "");
+    persistInitialRequirements(resetRequirements, "");
     triggerToast("Progres persyaratan direset.");
   };
 
@@ -460,8 +451,9 @@ export const PendaftaranTACombined: React.FC = () => {
   };
 
   const handleResetSubSim = () => {
-    setSubmissions(DEFAULT_THESIS_SUBMISSIONS);
-    persistThesisSubmissions(DEFAULT_THESIS_SUBMISSIONS);
+    const resetSubmissions = isDemoModeEnabled ? DEFAULT_THESIS_SUBMISSIONS : [];
+    setSubmissions(resetSubmissions);
+    persistThesisSubmissions(resetSubmissions);
     triggerToast("Riwayat pengajuan direset.");
   };
 
@@ -1064,7 +1056,7 @@ export const PendaftaranTACombined: React.FC = () => {
                   <input
                     type="text"
                     disabled
-                    value="Dr. Apt. Budi Santoso, M.Si. (Ditentukan Koordinator)"
+                    value="Ditentukan Koordinator"
                     className="w-full text-xs border border-dashed rounded-xl px-3 py-2 bg-muted text-muted-foreground/80 cursor-not-allowed"
                   />
                 </div>

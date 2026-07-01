@@ -3,7 +3,6 @@ import RoleLayoutComponent from '../../../layouts/MainLayout';
 import ContentWrapper from '../../../components/ContentWrapper';
 import { SectionCard } from '../../../components/ui/SectionCard';
 import DataTable from '../../../components/ui/DataTable';
-import { coordinatorStudentMock } from '../../../mock-data/coordinator-ui-mocks';
 import { AlertCircle, Check, Copy, Loader2, Search, X } from 'lucide-react';
 import { navigateTo } from '../../../router/Router';
 import { getCurrentRolePath } from '../../../lib/getCurrentRolePath';
@@ -118,50 +117,6 @@ const mapDirectoryStudentToRow = (
   isCompleted: student.isCompleted,
 });
 
-const mapMockStudentToRow = (student: any): CoordinatorMonitoringRow => ({
-  id: student.id,
-  nim: student.nim,
-  name: student.name,
-  title: student.title,
-  supervisor1: student.supervisor1 || '-',
-  status: student.status,
-  activeStepId: null,
-  isCompleted: student.status === 'Selesai Sidang' || student.status === 'Selesai',
-});
-
-const readRowSortValue = (
-  row: CoordinatorMonitoringRow,
-  key: StudentDirectorySortBy
-) => {
-  if (key === 'nim') return row.nim;
-  if (key === 'stage') return row.status;
-  if (key === 'supervisor1') return row.supervisor1;
-  return row.name;
-};
-
-const sortMonitoringRows = (
-  rows: CoordinatorMonitoringRow[],
-  key: StudentDirectorySortBy,
-  direction: SortDirection
-) =>
-  [...rows].sort((left, right) => {
-    const multiplier = direction === 'desc' ? -1 : 1;
-    const primary = readRowSortValue(left, key).localeCompare(
-      readRowSortValue(right, key),
-      'id',
-      { numeric: true, sensitivity: 'base' }
-    );
-
-    if (primary !== 0) {
-      return primary * multiplier;
-    }
-
-    return left.name.localeCompare(right.name, 'id', {
-      numeric: true,
-      sensitivity: 'base',
-    });
-  });
-
 export const CoordinatorMonitoringPage: React.FC = () => {
   const initialParams = useMemo(() => readHashSearchParams(), []);
   const [searchTerm, setSearchTerm] = useState(() => initialParams.get('q') || '');
@@ -180,13 +135,11 @@ export const CoordinatorMonitoringPage: React.FC = () => {
   const [activeStageCode, setActiveStageCode] = useState<CoordinatorLifecycleStageCode | null>(() =>
     readHashStageCode(initialParams)
   );
-  const [students, setStudents] = useState<CoordinatorMonitoringRow[]>(
-    coordinatorStudentMock.map(mapMockStudentToRow)
-  );
+  const [students, setStudents] = useState<CoordinatorMonitoringRow[]>([]);
   const [directoryMeta, setDirectoryMeta] = useState({
     page: 1,
     limit: pageLimit,
-    total: coordinatorStudentMock.length,
+    total: 0,
     totalPages: 1,
     sortBy,
     sortDir,
@@ -263,35 +216,12 @@ export const CoordinatorMonitoringPage: React.FC = () => {
       .catch((error) => {
         if (!isMounted) return;
 
-        const fallbackRows = sortMonitoringRows(
-          coordinatorStudentMock
-            .map(mapMockStudentToRow)
-            .filter((item) => {
-              const normalizedSearch = searchTerm.toLowerCase();
-              const matchesSearch =
-                !normalizedSearch ||
-                item.name.toLowerCase().includes(normalizedSearch) ||
-                item.nim.toLowerCase().includes(normalizedSearch);
-              const matchesStage =
-                !activeStageFilter ||
-                (activeStageFilter.completed && item.isCompleted) ||
-                (activeStageFilter.unregistered && !item.activeStepId && !item.isCompleted) ||
-                (!!activeStageFilter.activeStepId &&
-                  item.activeStepId === activeStageFilter.activeStepId);
-
-              return matchesSearch && matchesStage;
-            }),
-          sortBy,
-          sortDir
-        );
-        const start = (currentPage - 1) * pageLimit;
-
-        setStudents(fallbackRows.slice(start, start + pageLimit));
+        setStudents([]);
         setDirectoryMeta({
           page: currentPage,
           limit: pageLimit,
-          total: fallbackRows.length,
-          totalPages: Math.max(1, Math.ceil(fallbackRows.length / pageLimit)),
+          total: 0,
+          totalPages: 1,
           sortBy,
           sortDir,
         });

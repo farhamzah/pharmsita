@@ -37,80 +37,7 @@ interface StudentSupervisorData {
   supervisorRole?: "pembimbing-1" | "pembimbing-2" | null;
 }
 
-const INITIAL_STUDENT_LIST: StudentSupervisorData[] = [
-  {
-    id: '10',
-    name: 'Alif Fikri',
-    nim: '10123001',
-    title: 'Sistem Deteksi Anomali Jaringan IoT menggunakan Deep Learning',
-    stage: 'Bimbingan Pra Proposal',
-    p1Id: '1',
-    p2Id: '2'
-  },
-  {
-    id: '6',
-    name: 'Sisca Kaila',
-    nim: '887766554',
-    title: 'Sistem Deteksi Intrusi Jaringan Nirkabel Terdistribusi',
-    stage: 'Seminar Proposal',
-    p1Id: '1',
-    p2Id: '3'
-  },
-  {
-    id: '11',
-    name: 'Ratna Sari',
-    nim: '10123002',
-    title: 'Pengembangan Aplikasi Monitoring Pasien Hipertensi',
-    stage: 'Sidang Akhir',
-    p1Id: '3',
-    p2Id: '1'
-  },
-  {
-    id: '12',
-    name: 'Bagas Aditya',
-    nim: '10123003',
-    title: 'Analisis Sentimen Pengguna Aplikasi E-Commerce menggunakan Metode SVM',
-    stage: 'Sidang Akhir',
-    p1Id: '2',
-    p2Id: '4'
-  },
-  {
-    id: '13',
-    name: 'Dewi Lestari',
-    nim: '10123004',
-    title: 'Penerapan Metode Agile pada Pengembangan Sistem Informasi Akademik',
-    stage: 'Revisi Sidang',
-    p1Id: '4',
-    p2Id: '5'
-  },
-  {
-    id: '14',
-    name: 'Toni Hidayat',
-    nim: '10123005',
-    title: 'Optimasi Jaringan menggunakan Algoritma Genetika',
-    stage: 'Revisi Seminar Proposal',
-    p1Id: '5',
-    p2Id: '4'
-  },
-  {
-    id: '9',
-    name: 'Hendra Setiawan',
-    nim: '121212121',
-    title: 'Pengaruh Smartphone terhadap Prestasi Belajar',
-    stage: 'Selesai',
-    p1Id: '1',
-    p2Id: '2'
-  },
-  {
-    id: '1',
-    name: 'Budi Santoso',
-    nim: '13519001',
-    title: 'Sistem Informasi Manajemen Perpustakaan Berbasis AI',
-    stage: 'Selesai',
-    p1Id: '3',
-    p2Id: '5'
-  }
-];
+const INITIAL_STUDENT_LIST: StudentSupervisorData[] = [];
 
 const STEP_LABELS: Record<string, string> = {
   'pendaftaran-ta': 'Pendaftaran TA',
@@ -235,7 +162,8 @@ export const LecturerStudentListPage: React.FC = () => {
       })
       .catch(() => {
         if (!mounted) return;
-        setDirectoryError("Directory backend belum tersedia, memakai data demo lokal.");
+        setStudentsList([]);
+        setDirectoryError("Directory backend belum tersedia.");
       })
       .finally(() => {
         if (mounted) {

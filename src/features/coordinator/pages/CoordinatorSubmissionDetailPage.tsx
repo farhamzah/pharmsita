@@ -4,7 +4,6 @@ import { getCurrentRolePath } from '../../../lib/getCurrentRolePath';
 import ContentWrapper from '../../../components/ContentWrapper';
 import { SubmissionDetailView } from '../components/SubmissionDetailView';
 import { SubmissionDecisionPanel } from '../components/SubmissionDecisionPanel';
-import { submissionMockData } from '../../../mock-data/coordinator-ui-mocks';
 import { coordinatorFinalProjectRegistrationApi } from '../../../core/api/domain';
 import { mapRegistrationToSubmissionData } from '../utils/final-project-registration-mapper';
 import type { SubmissionData } from '../types/coordinator';
@@ -42,10 +41,9 @@ export const CoordinatorSubmissionDetailPage: React.FC = () => {
   // Extract ID from hash '#/kordinator/pengajuan/detail/sub-1'
   const hash = window.location.hash;
   const idMatch = hash.match(/detail\/([^/]+)$/);
-  const registrationId = idMatch ? decodeURIComponent(idMatch[1]) : 'sub-1';
+  const registrationId = idMatch ? decodeURIComponent(idMatch[1]) : '';
 
-  const fallbackData = submissionMockData.find(d => d.id === registrationId) || submissionMockData[0];
-  const [data, setData] = useState<SubmissionData>(fallbackData);
+  const [data, setData] = useState<SubmissionData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
@@ -53,6 +51,15 @@ export const CoordinatorSubmissionDetailPage: React.FC = () => {
   useEffect(() => {
     let mounted = true;
     setIsLoading(true);
+
+    if (!registrationId) {
+      setData(null);
+      setLoadError('ID pengajuan tidak valid.');
+      setIsLoading(false);
+      return () => {
+        mounted = false;
+      };
+    }
 
     coordinatorFinalProjectRegistrationApi
       .getById(registrationId)
@@ -63,8 +70,8 @@ export const CoordinatorSubmissionDetailPage: React.FC = () => {
       })
       .catch(() => {
         if (!mounted) return;
-        setData(fallbackData);
-        setLoadError('Detail memakai fallback mock karena data API tidak ditemukan.');
+        setData(null);
+        setLoadError('Detail pengajuan tidak ditemukan atau belum bisa dimuat dari backend.');
       })
       .finally(() => {
         if (mounted) {
@@ -75,17 +82,17 @@ export const CoordinatorSubmissionDetailPage: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [fallbackData, registrationId]);
+  }, [registrationId]);
 
-  const studentHistory = submissionMockData.filter(
-    sub => sub.nim === data.nim && sub.id !== data.id
-  );
+  const studentHistory: SubmissionData[] = [];
 
   const handleBack = () => {
     window.location.hash = `#/${getCurrentRolePath()}/pengajuan`;
   };
 
   const handleDecision = async (decision: 'disetujui' | 'ditolak', notes: string, spv1?: string, spv2?: string) => {
+    if (!data) return;
+
     try {
       const response = await coordinatorFinalProjectRegistrationApi.validate(data.id, {
         status: decision === 'disetujui' ? 'Disetujui' : 'Ditolak',
@@ -136,6 +143,11 @@ export const CoordinatorSubmissionDetailPage: React.FC = () => {
           </div>
         )}
 
+        {!data && !isLoading ? (
+          <div className="mt-4 rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+            Belum ada detail pengajuan yang bisa ditampilkan.
+          </div>
+        ) : data && (
         <div className="space-y-6 mt-4">
           <SubmissionDetailView data={data} />
           
@@ -332,6 +344,7 @@ export const CoordinatorSubmissionDetailPage: React.FC = () => {
           )}
 
         </div>
+        )}
       </ContentWrapper>
     </RoleLayoutComponent>
   );

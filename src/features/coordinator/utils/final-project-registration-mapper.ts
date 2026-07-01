@@ -15,12 +15,12 @@ const studentProfilesById: Record<
   Pick<SubmissionData, "studentName" | "nim" | "email" | "phone" | "birthDate" | "batch">
 > = {
   usr_mhs_01: {
-    studentName: "Dimas Indra Jaya",
+    studentName: "Mahasiswa",
     nim: "mahasiswa",
     email: "mahasiswa@pharmsita.local",
     phone: "-",
-    birthDate: "2002-01-01",
-    batch: "2022",
+    birthDate: "-",
+    batch: "-",
   },
   mock_mahasiswa: {
     studentName: "Mahasiswa Demo",
@@ -31,12 +31,12 @@ const studentProfilesById: Record<
     batch: "2022",
   },
   mock_student_budi: {
-    studentName: "Budi Santoso",
-    nim: "123456789",
-    email: "budi@student.ac.id",
-    phone: "081234567890",
-    birthDate: "2001-05-15",
-    batch: "2022",
+    studentName: "Mahasiswa",
+    nim: "mahasiswa",
+    email: "mahasiswa@pharmsita.local",
+    phone: "-",
+    birthDate: "-",
+    batch: "-",
   },
 };
 

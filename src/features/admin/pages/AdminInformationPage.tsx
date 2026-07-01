@@ -6,11 +6,16 @@ import Button from '../../../components/ui/Button';
 import BaseModal from '../../../components/ui/BaseModal';
 import { Plus, Send } from 'lucide-react';
 
-const mockInformasi = [
-  { id: '1', title: 'Panduan Penggunaan Sistem - Mahasiswa', category: 'Panduan', target: 'Mahasiswa', status: 'Publish', date: '01 Mar 2026' },
-  { id: '2', title: 'Format Baru Proposal TA 2026', category: 'Pengumuman', target: 'Semua', status: 'Publish', date: '10 Feb 2026' },
-  { id: '3', title: 'Jadwal Libur Idul Fitri', category: 'Pengumuman', target: 'Semua', status: 'Draft', date: '15 Mar 2026' },
-];
+type InformationRow = {
+  id: string;
+  title: string;
+  category: string;
+  target: string;
+  status: string;
+  date: string;
+};
+
+const informationRows: InformationRow[] = [];
 
 const AdminInformationPage: React.FC = () => {
   const [openModal, setOpenModal] = useState(false);
@@ -30,7 +35,7 @@ const AdminInformationPage: React.FC = () => {
         }
       >
         <DataTable
-          data={mockInformasi}
+          data={informationRows}
           columns={[
             { key: 'title', label: 'Judul Informasi' },
             { 

@@ -16,71 +16,7 @@ interface RevisionStudent {
   lastUpdated: string;
 }
 
-const INITIAL_REVISION_STUDENTS: RevisionStudent[] = [
-  {
-    id: '14',
-    name: 'Toni Hidayat',
-    nim: '10123005',
-    title: 'Optimasi Jaringan menggunakan Algoritma Genetika pada Topologi Hibrida',
-    stage: 'Revisi Proposal',
-    status: 'Sedang Direvisi',
-    lastUpdated: '2 jam yang lalu'
-  },
-  {
-    id: '4', // Muhammad Rizki (from prompt example)
-    name: 'Muhammad Rizki',
-    nim: '221011401234',
-    title: 'Formulasi dan Uji Aktivitas Bakteri Sediaan Gel Ekstrak Daun Sirih',
-    stage: 'Revisi Proposal',
-    status: 'Selesai Revisi',
-    lastUpdated: '1 hari yang lalu'
-  },
-  {
-    id: '6',
-    name: 'Sisca Kaila',
-    nim: '887766554',
-    title: 'Sistem Deteksi Intrusi Jaringan Nirkabel Terdistribusi berbasis Edge Computing',
-    stage: 'Revisi Proposal',
-    status: 'Sedang Direvisi',
-    lastUpdated: '3 jam yang lalu'
-  },
-  {
-    id: '13',
-    name: 'Dewi Lestari',
-    nim: '10123004',
-    title: 'Penerapan Metode Agile pada Pengembangan Sistem Informasi Akademik Terintegrasi',
-    stage: 'Revisi Sidang',
-    status: 'Sedang Direvisi',
-    lastUpdated: 'Baru saja'
-  },
-  {
-    id: '11',
-    name: 'Ratna Sari',
-    nim: '10123002',
-    title: 'Pengembangan Aplikasi Monitoring Pasien Hipertensi Real-time Berbasis Mobile',
-    stage: 'Revisi Sidang',
-    status: 'Selesai Revisi',
-    lastUpdated: '2 hari yang lalu'
-  },
-  {
-    id: '9',
-    name: 'Hendra Setiawan',
-    nim: '121212121',
-    title: 'Analisis Pengaruh Penggunaan Smartphone terhadap Efektivitas Belajar Mahasiswa',
-    stage: 'Revisi Sidang',
-    status: 'Selesai Revisi',
-    lastUpdated: '3 hari yang lalu'
-  },
-  {
-    id: '1',
-    name: 'Budi Santoso',
-    nim: '13519001',
-    title: 'Sistem Informasi Manajemen Perpustakaan Berbasis Artificial Intelligence',
-    stage: 'Revisi Sidang',
-    status: 'Selesai Revisi',
-    lastUpdated: '5 hari yang lalu'
-  }
-];
+const INITIAL_REVISION_STUDENTS: RevisionStudent[] = [];
 
 type RevisionFilterTab = 'revisi-proposal' | 'revisi-sidang' | 'riwayat-revisi';
 

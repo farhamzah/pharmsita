@@ -2,12 +2,25 @@ import React from 'react';
 import ContentWrapper from '../../../components/ContentWrapper';
 import MainLayout from '../../../layouts/MainLayout';
 import { UnifiedProfileView } from '../../../components/shared/UnifiedProfileView';
-import { mockAdminProfiles } from '../../../mock-data/profiles';
+import type { AdminProfile } from '../../../mock-data/profiles';
+import { Roles } from '../../../mock-data/enums';
 import { useSessionProfile } from '../../shared/hooks/useSessionProfile';
+
+const emptyAdminProfile: AdminProfile = {
+  id: '',
+  name: '',
+  email: '',
+  phone: '',
+  role: Roles.ADMIN,
+  status: 'Aktif',
+  divisi: '',
+  tingkatAkses: 'Admin Prodi',
+  cakupanAkses: [],
+};
 
 const AdminProfilePage: React.FC = () => {
   const { profile: adminProfile, isLoading, error, saveProfile } = useSessionProfile(
-    mockAdminProfiles[0]
+    emptyAdminProfile
   );
 
   return (

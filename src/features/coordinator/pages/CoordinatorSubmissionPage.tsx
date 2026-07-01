@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import RoleLayoutComponent from '../../../layouts/MainLayout';
 import ContentWrapper from '../../../components/ContentWrapper';
 import { SubmissionListTable } from '../components/SubmissionListTable';
-import { submissionMockData } from '../../../mock-data/coordinator-ui-mocks';
 import { coordinatorFinalProjectRegistrationApi } from '../../../core/api/domain';
 import { mapRegistrationToSubmissionData } from '../utils/final-project-registration-mapper';
 import type { SubmissionData } from '../types/coordinator';
@@ -27,8 +26,8 @@ export const CoordinatorSubmissionPage: React.FC = () => {
       })
       .catch(() => {
         if (!mounted) return;
-        setSubmissions(submissionMockData.filter((item) => !item.isHistory));
-        setErrorMessage('Data pengajuan memakai fallback mock karena API belum tersedia.');
+        setSubmissions([]);
+        setErrorMessage('Data pengajuan belum bisa dimuat dari backend.');
       })
       .finally(() => {
         if (mounted) {

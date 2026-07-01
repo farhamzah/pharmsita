@@ -39,7 +39,7 @@ export const LecturerMonitoringPage: React.FC = () => {
 
   // Group by tahapan
   const groupedData = filteredData.reduce((acc, student) => {
-     const t = student.tahapan;
+     const t = student.tahapan || 'Belum Ada Tahapan';
      if (!acc[t]) acc[t] = [];
      acc[t].push(student);
      return acc;

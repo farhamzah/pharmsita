@@ -49,7 +49,7 @@ export const InitialRequirementsStep: React.FC = () => {
       .catch(() => {
         if (!mounted) return;
 
-        setRequirements(DEFAULT_INITIAL_REQUIREMENTS);
+        setRequirements(isDemoModeEnabled ? DEFAULT_INITIAL_REQUIREMENTS : []);
         setDriveLink("");
         setDriveLinkInput("");
         setIsEditingLink(true);
@@ -177,11 +177,12 @@ export const InitialRequirementsStep: React.FC = () => {
 
   // Simulator: Reset
   const handleResetSim = () => {
-    setRequirements(DEFAULT_INITIAL_REQUIREMENTS);
+    const resetRequirements = isDemoModeEnabled ? DEFAULT_INITIAL_REQUIREMENTS : [];
+    setRequirements(resetRequirements);
     setDriveLink("");
     setDriveLinkInput("");
     setIsEditingLink(true);
-    saveRequirementsState(DEFAULT_INITIAL_REQUIREMENTS, "");
+    saveRequirementsState(resetRequirements, "");
     triggerToast("Progres simulasi berhasil direset ke status bawaan.");
   };
 

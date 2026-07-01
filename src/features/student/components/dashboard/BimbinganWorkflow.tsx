@@ -296,7 +296,7 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
       .catch(() => {
         if (!mounted) return;
 
-        setReqList(defaultReqs);
+        setReqList(isDemoModeEnabled ? defaultReqs : []);
         setStageDriveLink("");
         setStageDriveInput("");
         setIsEditingStageLink(true);
@@ -414,11 +414,12 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
   };
 
   const handleResetReqSubSim = () => {
-    setReqList(defaultReqs);
+    const resetReqs = isDemoModeEnabled ? defaultReqs : [];
+    setReqList(resetReqs);
     setStageDriveLink("");
     setStageDriveInput("");
     setIsEditingStageLink(true);
-    saveRequirementsState(defaultReqs, "");
+    saveRequirementsState(resetReqs, "");
     triggerReqToast("Persyaratan bimbingan berhasil direset.");
   };
 
@@ -742,8 +743,8 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
                   </div>
                   <div className="min-w-0">
                     <span className="text-[10px] uppercase tracking-wider font-bold text-sky-600 dark:text-sky-400">Pembimbing Utama (1)</span>
-                    <h4 className="text-sm font-semibold truncate text-foreground">Dr. Apt. Rina Marlina, M.Farm.</h4>
-                    <p className="text-xs text-muted-foreground truncate">NIDN: 0123456789 • Teknologi Sediaan</p>
+                    <h4 className="text-sm font-semibold truncate text-foreground">Belum ditetapkan</h4>
+                    <p className="text-xs text-muted-foreground truncate">Menunggu penetapan koordinator</p>
                   </div>
                 </div>
 
@@ -754,8 +755,8 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
                   </div>
                   <div className="min-w-0">
                     <span className="text-[10px] uppercase tracking-wider font-bold text-indigo-600 dark:text-indigo-400">Pembimbing Pendamping (2)</span>
-                    <h4 className="text-sm font-semibold truncate text-foreground">Dr. Apt. Budi Santoso, M.Si.</h4>
-                    <p className="text-xs text-muted-foreground truncate">NIDN: 0987654321 • Farmakologi Uji</p>
+                    <h4 className="text-sm font-semibold truncate text-foreground">Belum ditetapkan</h4>
+                    <p className="text-xs text-muted-foreground truncate">Menunggu penetapan koordinator</p>
                   </div>
                 </div>
               </>
@@ -769,14 +770,14 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
                     </div>
                     <div className="min-w-0">
                       <span className="text-[10px] uppercase tracking-wider font-bold text-primary">Mahasiswa Bimbingan Anda</span>
-                      <h4 className="text-base font-semibold truncate text-foreground">Dimas Indra Jaya</h4>
-                      <p className="text-xs text-muted-foreground">NIM: 221011400215 • Angkatan 2022 • Skema: Skripsi</p>
+                      <h4 className="text-base font-semibold truncate text-foreground">Mahasiswa Bimbingan</h4>
+                      <p className="text-xs text-muted-foreground">Data mahasiswa mengikuti student directory.</p>
                     </div>
                   </div>
                   <div className="sm:text-right border-t sm:border-t-0 pt-3 sm:pt-0 border-border/60">
                     <span className="text-[10px] block text-muted-foreground uppercase font-bold">Judul Tugas Akhir</span>
                     <p className="text-xs font-semibold text-foreground max-w-sm line-clamp-2 mt-0.5 leading-relaxed">
-                      Formulasi dan Uji Stabilitas Sediaan Gel Ekstrak Daun Sirih
+                      Judul tugas akhir belum tersedia.
                     </p>
                   </div>
                 </div>
@@ -857,7 +858,7 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
               <div className="bg-muted/20 border border-border/60 rounded-xl p-4 flex flex-col justify-between gap-3 shadow-2xs">
                 <div>
                   <span className="text-[10px] text-muted-foreground uppercase font-bold block mb-1">Approval Pembimbing 1</span>
-                  <span className="text-xs font-semibold text-foreground">Dr. Apt. Rina Marlina</span>
+                  <span className="text-xs font-semibold text-foreground">Pembimbing 1</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span
@@ -885,7 +886,7 @@ export const BimbinganWorkflow: React.FC<BimbinganWorkflowProps> = ({
               <div className="bg-muted/20 border border-border/60 rounded-xl p-4 flex flex-col justify-between gap-3 shadow-2xs">
                 <div>
                   <span className="text-[10px] text-muted-foreground uppercase font-bold block mb-1">Approval Pembimbing 2</span>
-                  <span className="text-xs font-semibold text-foreground">Dr. Apt. Budi Santoso</span>
+                  <span className="text-xs font-semibold text-foreground">Pembimbing 2</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span

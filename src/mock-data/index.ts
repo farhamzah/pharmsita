@@ -8,7 +8,6 @@ export * from './notes';
 export * from './documents';
 export * from './notifications';
 export * from './profiles';
-export * from './ui-mocks';
 export * from './requirements';
 export * from './academic-periods';
 

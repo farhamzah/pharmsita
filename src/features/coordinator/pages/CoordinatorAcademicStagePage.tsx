@@ -4,7 +4,6 @@ import ContentWrapper from '../../../components/ContentWrapper';
 import { SectionCard } from '../../../components/ui/SectionCard';
 import DataTable from '../../../components/ui/DataTable';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
-import { coordinatorStudentMock } from '../../../mock-data/ui-mocks';
 import {
   coordinatorWorkflowApi,
   type StudentDirectoryItem,
@@ -19,7 +18,7 @@ import { RevisiWorkflow } from '../../student/components/dashboard/RevisiWorkflo
 
 // Import Profile and Mocks
 import { UnifiedProfileView } from '../../../components/shared/UnifiedProfileView';
-import { mockStudentProfiles, type StudentProfile } from '../../../mock-data/profiles';
+import type { StudentProfile } from '../../../mock-data/profiles';
 import { Roles } from '../../../mock-data/enums';
 import type { StudentStep, StepId, StepStatus } from '../../student/types/progress';
 
@@ -96,15 +95,6 @@ const mapStudentToStepId = (student: any): string => {
   }
 };
 
-const mapLegacyStudent = (student: any): CoordinatorStudentRow => ({
-  id: student.id,
-  name: student.name,
-  nim: student.nim,
-  title: student.title,
-  status: student.status,
-  stage: student.stage || student.tahapan || "",
-});
-
 const mapDirectoryStudent = (student: StudentDirectoryItem): CoordinatorStudentRow => ({
   id: student.id,
   name: student.name,
@@ -119,7 +109,7 @@ const mapDirectoryStudent = (student: StudentDirectoryItem): CoordinatorStudentR
   kelas: student.kelas,
 });
 
-const initialCoordinatorStudents = coordinatorStudentMock.map(mapLegacyStudent);
+const initialCoordinatorStudents: CoordinatorStudentRow[] = [];
 
 const getStepsForStudent = (student: any): StudentStep[] => {
   const currentStepId = mapStudentToStepId(student);
@@ -191,7 +181,8 @@ export const CoordinatorAcademicStagePage: React.FC = () => {
       })
       .catch(() => {
         if (!mounted) return;
-        setDirectoryError("Directory backend belum tersedia, memakai data demo lokal.");
+        setStudents([]);
+        setDirectoryError("Directory backend belum tersedia.");
       })
       .finally(() => {
         if (mounted) {
@@ -254,32 +245,29 @@ export const CoordinatorAcademicStagePage: React.FC = () => {
   const selectedStudent = students.find(s => s.id === selectedStudentId);
 
   const getStudentProfile = (student: any): StudentProfile => {
-    const existing = mockStudentProfiles.find(p => p.nim === student.nim || p.name === student.name);
-    if (existing) return existing;
-
     return {
       id: `s_prof_${student.id}`,
       name: student.name,
-      email: `${student.name.toLowerCase().replace(/\s+/g, '')}@student.pharmsita.ac.id`,
-      phone: '0812' + Math.floor(10000000 + Math.random() * 90000000),
+      email: '',
+      phone: '',
       photo: `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random`,
       role: Roles.STUDENT,
       status: student.isCompleted || student.stage === 'Selesai' ? 'Lulus' : 'Aktif',
-      tanggalLahir: '2002-05-15',
-      alamat: 'Jl. Kampus Universitas PharmSita, Tangerang',
-      gender: student.name.toLowerCase().includes('sari') || student.name.toLowerCase().includes('lina') || student.name.toLowerCase().includes('lia') || student.name.toLowerCase().includes('aminah') || student.name.toLowerCase().includes('sisca') ? 'Perempuan' : 'Laki-laki',
+      tanggalLahir: '',
+      alamat: '',
+      gender: undefined,
       nim: student.nim,
-      programStudi: student.programStudi || 'S1 Farmasi',
-      angkatan: student.angkatan || (student.nim.startsWith('13519') || student.nim === '121212121' ? '2019' : student.nim.startsWith('10123') ? '2021' : '2020'),
-      kelas: student.kelas || 'FA-22-01',
-      skemaTA: student.nim === '987654321' ? 'Non Skripsi' : 'Skripsi',
-      jenisTA: student.nim === '987654321' ? 'MBKM' : 'Penelitian',
+      programStudi: student.programStudi || '',
+      angkatan: student.angkatan || '',
+      kelas: student.kelas || '',
+      skemaTA: 'Skripsi',
+      jenisTA: '',
       judulTA: student.title,
-      pembimbing1: 'Dr. Apt. Rina Marlina, M.Farm.',
-      pembimbing2: 'Dr. Apt. Budi Santoso, M.Si.',
+      pembimbing1: '',
+      pembimbing2: '',
       tahapanAktif: student.stage,
-      statusPengajuan: 'Disetujui',
-      linkBerkas: 'https://drive.google.com/file/d/mock-berkas-dynamic/view'
+      statusPengajuan: student.status || '',
+      linkBerkas: ''
     };
   };
 

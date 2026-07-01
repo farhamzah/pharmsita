@@ -2,211 +2,66 @@ import type { BimbinganData, BimbinganSession, ChatMessage } from "../types/bimb
 import { storageService } from "../../../core/services/storage-service";
 
 const LOCAL_STORAGE_PREFIX = "student_bimbingan_data_";
+const REQUIRED_SESSION_COUNT = 8;
 
-const createDefaultSessions = (): BimbinganSession[] => [
-  {
-    id: 1,
-    title: "Diskusi Topik Utama & Latar Belakang Masalah",
-    status: "approved",
-    sessionStatus: "approved",
-    sessionStartDate: "2026-05-20",
-    sessionStartTime: "09:30",
-    chats: [
-      {
-        id: "msg_1_1",
-        senderName: "Dimas Indra Jaya",
-        senderRole: "mahasiswa",
-        message: "Assalamualaikum wr. wb. Bu Rina, saya ingin berkonsultasi mengenai ide judul Tugas Akhir bertema formulasi gel daun sirih.",
-        timestamp: "2026-05-10T09:00:00Z",
-      },
-      {
-        id: "msg_1_2",
-        senderName: "Dr. Apt. Rina Marlina, M.Farm.",
-        senderRole: "dosen",
-        message: "Waalaikumsalam, ide bagus Dimas. Silakan susun rancangan latar belakang dan fokus uji stabilitasnya. Kumpulkan draftnya di sini ya.",
-        timestamp: "2026-05-10T11:15:00Z",
-      },
-      {
-        id: "msg_1_3",
-        senderName: "Dimas Indra Jaya",
-        senderRole: "mahasiswa",
-        message: "Baik bu, sudah saya lampirkan draf latar belakang pada tautan Google Docs di atas. Terima kasih bu.",
-        timestamp: "2026-05-11T08:00:00Z",
-      },
-      {
-        id: "msg_1_4",
-        senderName: "Dr. Apt. Rina Marlina, M.Farm.",
-        senderRole: "dosen",
-        message: "Saya sudah membacanya. Secara garis besar sudah oke, bisa dilanjutkan ke penyusunan bab Tinjauan Pustaka. Topik bimbingan ini saya approve.",
-        timestamp: "2026-05-12T14:30:00Z",
-      },
-    ],
-  },
-  {
-    id: 2,
-    title: "Penyusunan Tinjauan Pustaka & Kajian Teori Gel Stabilitas",
-    status: "approved",
-    sessionStatus: "approved",
-    sessionStartDate: "2026-05-27",
-    sessionStartTime: "09:30",
-    chats: [
-      {
-        id: "msg_2_1",
-        senderName: "Dimas Indra Jaya",
-        senderRole: "mahasiswa",
-        message: "Pagi bu, untuk Tinjauan Pustaka mengenai uji stabilitas dipercepat, apakah saya perlu merujuk pada standar ICH Guideline?",
-        timestamp: "2026-05-14T08:30:00Z",
-      },
-      {
-        id: "msg_2_2",
-        senderName: "Dr. Apt. Rina Marlina, M.Farm.",
-        senderRole: "dosen",
-        message: "Ya betul, sangat disarankan menggunakan ICH Q1A untuk stabilitas sediaan baru agar metodologinya kuat.",
-        timestamp: "2026-05-14T10:00:00Z",
-      },
-      {
-        id: "msg_2_3",
-        senderName: "Dr. Apt. Rina Marlina, M.Farm.",
-        senderRole: "dosen",
-        message: "Silakan tambahkan juga literatur daun sirih dari jurnal 5 tahun terakhir.",
-        timestamp: "2026-05-14T10:02:00Z",
-      },
-    ],
-  },
-  {
-    id: 3,
-    title: "Pembahasan Metode Penelitian & Desain Formulasi",
-    status: "approved",
-    sessionStatus: "approved",
-    sessionStartDate: "2026-06-03",
-    sessionStartTime: "09:30",
-    chats: [
-      {
-        id: "msg_3_1",
-        senderName: "Dimas Indra Jaya",
-        senderRole: "mahasiswa",
-        message: "Siang bu, berikut merupakan persentase konsentrasi ekstrak yang akan saya uji yaitu 2%, 4%, dan 6%. Mohon arahannya.",
-        timestamp: "2026-05-16T13:00:00Z",
-      },
-      {
-        id: "msg_3_2",
-        senderName: "Dr. Apt. Rina Marlina, M.Farm.",
-        senderRole: "dosen",
-        message: "Rentang konsentrasinya sudah bagus. Pastikan kontrol negatif dan kontrol positif (gel basis tanpa zat aktif) disiapkan dalam pengujian.",
-        timestamp: "2026-05-16T15:45:00Z",
-      },
-    ],
-  },
-  {
-    id: 4,
-    title: "Diskusi Pembimbing 2 - Analisis Instrumen Uji Fisik Gel",
-    status: "in progress",
-    sessionStatus: "approved",
-    sessionStartDate: "2026-06-10",
-    sessionStartTime: "09:30",
-    chats: [
-      {
-        id: "msg_4_1",
-        senderName: "Dimas Indra Jaya",
-        senderRole: "mahasiswa",
-        message: "Selamat pagi Pak Budi, saya ingin bertanya mengenai metode uji viskositas gel. Apakah sebaiknya menggunakan viskosimeter Brookfield spindle nomor 4?",
-        timestamp: "2026-05-19T07:45:00Z",
-      },
-      {
-        id: "msg_4_2",
-        senderName: "Dr. Apt. Budi Santoso, M.Si.",
-        senderRole: "dosen",
-        message: "Halo Dimas. Untuk sediaan gel dengan viskositas sedang, spindle 4 kecepatan 50 rpm biasanya paling stabil. Silakan dicoba dulu dan catat hasilnya pada tabel metodologi.",
-        timestamp: "2026-05-19T11:20:00Z",
-      },
-    ],
-  },
-  {
-    id: 5,
-    title: "Bimbingan 5 (Belum diisi)",
+const createDefaultSessions = (): BimbinganSession[] =>
+  Array.from({ length: REQUIRED_SESSION_COUNT }, (_, index) => ({
+    id: index + 1,
+    title: `Bimbingan ${index + 1} (Belum diisi)`,
     status: "pending",
     sessionStatus: "idle",
     sessionStartDate: null,
     sessionStartTime: null,
     chats: [],
-  },
-  {
-    id: 6,
-    title: "Bimbingan 6 (Belum diisi)",
-    status: "pending",
-    sessionStatus: "idle",
-    sessionStartDate: null,
-    sessionStartTime: null,
-    chats: [],
-  },
-  {
-    id: 7,
-    title: "Bimbingan 7 (Belum diisi)",
-    status: "pending",
-    sessionStatus: "idle",
-    sessionStartDate: null,
-    sessionStartTime: null,
-    chats: [],
-  },
-  {
-    id: 8,
-    title: "Bimbingan 8 (Belum diisi)",
-    status: "pending",
-    sessionStatus: "idle",
-    sessionStartDate: null,
-    sessionStartTime: null,
-    chats: [],
-  },
-];
+  }));
+
+const createEmptyBimbinganData = (stageId: string): BimbinganData => ({
+  stageId,
+  googleDocsLink: "",
+  pembimbing1Approved: false,
+  pembimbing2Approved: false,
+  sessions: createDefaultSessions(),
+  finalFile: null,
+  guidanceStatus: "idle",
+  guidanceRequestedAt: null,
+  guidanceApprovedAt: null,
+  guidanceStartDate: null,
+  guidanceTime: null,
+  guidanceNote: null,
+  guidanceApprovalNote: null,
+});
+
+const isLegacySeedData = (data: BimbinganData): boolean => {
+  if (data.guidanceApprovedAt === "2026-05-19T10:00:00Z") return true;
+  return data.sessions.some((session) => session.id <= 4 && session.chats.length > 0);
+};
 
 export class BimbinganService {
-  /**
-   * Mengambil data bimbingan lengkap berdasarkan tahapan (stageId)
-   */
+  private getKey(stageId: string): string {
+    return `${LOCAL_STORAGE_PREFIX}${stageId}`;
+  }
+
   getBimbinganData(stageId: string): BimbinganData {
-    const key = LOCAL_STORAGE_PREFIX + stageId;
+    const key = this.getKey(stageId);
     const saved = storageService.get<BimbinganData>(key);
 
-    if (saved) {
-      // Force upgrade old local storage if status is idle or fields are empty
-      if (saved.guidanceStatus === 'idle' || !saved.guidanceTime || !saved.guidanceStartDate) {
-        storageService.remove(key);
-      } else {
-        return saved;
-      }
+    if (saved && !isLegacySeedData(saved)) {
+      return saved;
     }
 
-    // Default seed data (Pre-Confirmed & Approved by Lecturer)
-    const defaultData: BimbinganData = {
-      stageId,
-      googleDocsLink: "https://docs.google.com/document/d/1mock_pharmsita_doc_link_daun_sirih/edit",
-      pembimbing1Approved: false,
-      pembimbing2Approved: false,
-      sessions: createDefaultSessions(),
-      finalFile: null,
-      guidanceStatus: 'approved',
-      guidanceRequestedAt: "2026-05-18T09:00:00Z",
-      guidanceApprovedAt: "2026-05-19T10:00:00Z",
-      guidanceStartDate: "2026-05-20",
-      guidanceTime: "09:30",
-      guidanceNote: "Saya ingin mengajukan bimbingan Tugas Akhir mengenai formulasi gel daun sirih.",
-      guidanceApprovalNote: "Silakan mulai bimbingan. Saya telah menyetujui pengajuan bimbingan Anda.",
-    };
-    this.saveBimbinganData(stageId, defaultData);
-    return defaultData;
+    if (saved) {
+      storageService.remove(key);
+    }
+
+    const emptyData = createEmptyBimbinganData(stageId);
+    this.saveBimbinganData(stageId, emptyData);
+    return emptyData;
   }
 
-  /**
-   * Menyimpan data bimbingan ke storage mock.
-   */
   saveBimbinganData(stageId: string, data: BimbinganData) {
-    const key = LOCAL_STORAGE_PREFIX + stageId;
-    storageService.set(key, data);
+    storageService.set(this.getKey(stageId), data);
   }
 
-  /**
-   * Mengupdate link google docs utama
-   */
   updateGoogleDocsLink(stageId: string, link: string): BimbinganData {
     const data = this.getBimbinganData(stageId);
     data.googleDocsLink = link;
@@ -214,9 +69,6 @@ export class BimbinganService {
     return data;
   }
 
-  /**
-   * Mengupdate status bimbingan dari Pembimbing 1 atau Pembimbing 2 (Kelayakan TA)
-   */
   updateApproval(stageId: string, pembimbingNum: 1 | 2, approved: boolean): BimbinganData {
     const data = this.getBimbinganData(stageId);
     if (pembimbingNum === 1) {
@@ -228,9 +80,6 @@ export class BimbinganService {
     return data;
   }
 
-  /**
-   * Mengupdate data spesifik sesi bimbingan (Judul topik & status)
-   */
   updateSession(
     stageId: string,
     sessionId: number,
@@ -238,31 +87,20 @@ export class BimbinganService {
     status: "pending" | "in progress" | "approved"
   ): BimbinganData {
     const data = this.getBimbinganData(stageId);
-    const session = data.sessions.find(s => s.id === sessionId);
+    const session = data.sessions.find((item) => item.id === sessionId);
+
     if (session) {
       session.title = title;
       session.status = status;
-
-      // Jika session di-approve, coba buat session berikutnya berstatus 'pending' & 'idle'
       if (status === "approved") {
         session.sessionStatus = "approved";
-        const nextSession = data.sessions.find(s => s.id === sessionId + 1);
-        if (nextSession && nextSession.status === "pending") {
-          nextSession.status = "pending";
-          nextSession.sessionStatus = "idle";
-          nextSession.sessionStartDate = null;
-          nextSession.sessionStartTime = null;
-        }
       }
-
       this.saveBimbinganData(stageId, data);
     }
+
     return data;
   }
 
-  /**
-   * Menambahkan chat bimbingan baru ke forum/sesi bimbingan tertentu
-   */
   addChatMessage(
     stageId: string,
     sessionId: number,
@@ -271,28 +109,26 @@ export class BimbinganService {
     message: string
   ): BimbinganData {
     const data = this.getBimbinganData(stageId);
-    const session = data.sessions.find(s => s.id === sessionId);
+    const session = data.sessions.find((item) => item.id === sessionId);
+
     if (session) {
       const newMsg: ChatMessage = {
-        id: "msg_" + sessionId + "_" + Date.now(),
+        id: `msg_${sessionId}_${Date.now()}`,
         senderName,
         senderRole,
         message,
         timestamp: new Date().toISOString(),
       };
       session.chats.push(newMsg);
-
-      // Status bimbingan diatur secara manual melalui tombol Ajukan dan Konfirmasi Jadwal,
-      // bukan secara otomatis pada saat pengetikan chat pertama kali.
-
+      if (session.status === "pending") {
+        session.status = "in progress";
+      }
       this.saveBimbinganData(stageId, data);
     }
+
     return data;
   }
 
-  /**
-   * Mengunggah berkas final bimbingan
-   */
   uploadFinalFile(stageId: string, fileName: string): BimbinganData {
     const data = this.getBimbinganData(stageId);
     data.finalFile = fileName;
@@ -300,23 +136,14 @@ export class BimbinganService {
     return data;
   }
 
-  /**
-   * Mereset seluruh progres bimbingan ke keadaan awal
-   */
   resetBimbinganData(stageId: string): BimbinganData {
-    const key = LOCAL_STORAGE_PREFIX + stageId;
-    storageService.remove(key);
+    storageService.remove(this.getKey(stageId));
     return this.getBimbinganData(stageId);
   }
 
-  // ==================== GUIDANCE REQUEST FLOW ====================
-
-  /**
-   * Mahasiswa mengajukan bimbingan (idle → requested)
-   */
   requestGuidance(stageId: string, note: string): BimbinganData {
     const data = this.getBimbinganData(stageId);
-    data.guidanceStatus = 'requested';
+    data.guidanceStatus = "requested";
     data.guidanceRequestedAt = new Date().toISOString();
     data.guidanceNote = note || null;
     data.guidanceApprovedAt = null;
@@ -327,12 +154,9 @@ export class BimbinganService {
     return data;
   }
 
-  /**
-   * Pembimbing menyetujui pengajuan bimbingan (requested → approved)
-   */
   approveGuidance(stageId: string, startDate: string, startTime: string, approvalNote: string): BimbinganData {
     const data = this.getBimbinganData(stageId);
-    data.guidanceStatus = 'approved';
+    data.guidanceStatus = "approved";
     data.guidanceApprovedAt = new Date().toISOString();
     data.guidanceStartDate = startDate;
     data.guidanceTime = startTime;
@@ -341,14 +165,11 @@ export class BimbinganService {
     return data;
   }
 
-  /**
-   * Mahasiswa mengajukan bimbingan untuk SESI spesifik
-   */
   requestSessionGuidance(stageId: string, sessionId: number): BimbinganData {
     const data = this.getBimbinganData(stageId);
-    const session = data.sessions.find(s => s.id === sessionId);
+    const session = data.sessions.find((item) => item.id === sessionId);
     if (session) {
-      session.sessionStatus = 'requested';
+      session.sessionStatus = "requested";
       session.sessionStartDate = null;
       session.sessionStartTime = null;
       this.saveBimbinganData(stageId, data);
@@ -356,15 +177,12 @@ export class BimbinganService {
     return data;
   }
 
-  /**
-   * Dospem menyetujui dan menjadwalkan SESI spesifik
-   */
   approveSessionGuidance(stageId: string, sessionId: number, startDate: string, startTime: string): BimbinganData {
     const data = this.getBimbinganData(stageId);
-    const session = data.sessions.find(s => s.id === sessionId);
+    const session = data.sessions.find((item) => item.id === sessionId);
     if (session) {
-      session.sessionStatus = 'approved';
-      session.status = 'in progress';
+      session.sessionStatus = "approved";
+      session.status = "in progress";
       session.sessionStartDate = startDate;
       session.sessionStartTime = startTime;
       session.title = session.title.includes("Belum diisi")
@@ -375,21 +193,15 @@ export class BimbinganService {
     return data;
   }
 
-  /**
-   * Reset status pengajuan bimbingan ke idle (untuk simulator)
-   */
   resetGuidance(stageId: string): BimbinganData {
     const data = this.getBimbinganData(stageId);
-    data.guidanceStatus = 'idle';
+    data.guidanceStatus = "idle";
     data.guidanceRequestedAt = null;
     data.guidanceApprovedAt = null;
     data.guidanceStartDate = null;
     data.guidanceTime = null;
     data.guidanceApprovalNote = null;
-    
-    // Reset all sessions' custom statuses to default mockup state
     data.sessions = createDefaultSessions();
-    
     this.saveBimbinganData(stageId, data);
     return data;
   }

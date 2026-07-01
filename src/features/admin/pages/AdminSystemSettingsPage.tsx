@@ -1,21 +1,73 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ContentWrapper from '../../../components/ContentWrapper';
 import MainLayout from '../../../layouts/MainLayout';
 import { SectionCard } from '../../../components/ui/SectionCard';
 import Button from '../../../components/ui/Button';
 import { PencilLine, Check, X } from 'lucide-react';
-import { mockLecturerProfiles } from '../../../mock-data';
+import { coordinatorWorkflowApi, type LecturerDirectoryItem } from '../../../core/api/domain';
+
+type LecturerQuotaRow = {
+  id: string;
+  name: string;
+  nidn: string;
+  kuotaPembimbing1: number;
+  kuotaPembimbing2: number;
+  kuotaTerpakaiPembimbing1: number;
+  kuotaTerpakaiPembimbing2: number;
+  kuotaTersediaPembimbing1: number;
+  kuotaTersediaPembimbing2: number;
+};
+
+const mapLecturerQuotaRow = (lecturer: LecturerDirectoryItem): LecturerQuotaRow => {
+  const limit = Number(lecturer.quotaLimit || 0);
+  const p1Active = Number(lecturer.p1Active || 0);
+  const p2Active = Number(lecturer.p2Active || 0);
+
+  return {
+    id: lecturer.id,
+    name: lecturer.name,
+    nidn: lecturer.nidn || lecturer.identifier,
+    kuotaPembimbing1: limit,
+    kuotaPembimbing2: limit,
+    kuotaTerpakaiPembimbing1: p1Active,
+    kuotaTerpakaiPembimbing2: p2Active,
+    kuotaTersediaPembimbing1: Math.max(0, limit - p1Active),
+    kuotaTersediaPembimbing2: Math.max(0, limit - p2Active),
+  };
+};
 
 const AdminSystemSettingsPage: React.FC = () => {
   const [globalPb1, setGlobalPb1] = useState(10);
   const [globalPb2, setGlobalPb2] = useState(10);
 
-  const [lecturers, setLecturers] = useState(mockLecturerProfiles);
+  const [lecturers, setLecturers] = useState<LecturerQuotaRow[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPb1, setEditPb1] = useState(0);
   const [editPb2, setEditPb2] = useState(0);
 
-  const startEdit = (lecturer: typeof mockLecturerProfiles[0]) => {
+  useEffect(() => {
+    let mounted = true;
+
+    coordinatorWorkflowApi
+      .listLecturers()
+      .then((response) => {
+        if (!mounted) return;
+        setLecturers(response.data.map(mapLecturerQuotaRow));
+        setLoadError(null);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setLecturers([]);
+        setLoadError('Data kuota dosen belum bisa dimuat dari backend.');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const startEdit = (lecturer: LecturerQuotaRow) => {
     setEditingId(lecturer.id);
     setEditPb1(lecturer.kuotaPembimbing1);
     setEditPb2(lecturer.kuotaPembimbing2);
@@ -58,6 +110,11 @@ const AdminSystemSettingsPage: React.FC = () => {
         description="Konfigurasi parameter global dan modul sistem."
         headerRight={<Button>Simpan Perubahan</Button>}
       >
+        {loadError && (
+          <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            {loadError}
+          </p>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <SectionCard title="Pengaturan Pendaftaran TA">
             <div className="space-y-4">
@@ -146,7 +203,13 @@ const AdminSystemSettingsPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y text-foreground bg-card">
-                      {lecturers.map(lecturer => {
+                      {lecturers.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                            Belum ada data dosen.
+                          </td>
+                        </tr>
+                      ) : lecturers.map(lecturer => {
                         const isEditing = editingId === lecturer.id;
                         
                         // Calculated remaining capacity specifically for UI 

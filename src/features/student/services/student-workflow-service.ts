@@ -79,21 +79,7 @@ export const DEFAULT_INITIAL_REQUIREMENTS: RequirementItem[] = [
   },
 ];
 
-export const DEFAULT_THESIS_SUBMISSIONS: ThesisSubmission[] = [
-  {
-    id: "sub_1",
-    date: "10 Mei 2026",
-    skema: "Skripsi",
-    jenisTA: "Penelitian Reguler",
-    judulTA: "Formulasi dan Evaluasi Karakteristik Fisikokimia Sediaan Gel Ekstrak Daun Kelor (Moringa oleifera) dengan Variasi Konsentrasi Karbopol 940",
-    deskripsiTA: "Penelitian ini berfokus pada formulasi sediaan gel menggunakan ekstrak daun kelor sebagai antioksidan alami. Gel diformulasikan dengan variasi konsentrasi basis gelling agent Karbopol 940 (0.5%, 1.0%, 1.5%) untuk melihat kestabilan fisik dan efektivitas antioksidannya.",
-    pembimbing1: "Dr. Apt. Rina Marlina, M.Farm.",
-    pembimbing2: "Dr. Apt. Budi Santoso, M.Si. (Ditentukan Koordinator)",
-    status: "Ditolak",
-    catatanKoordinator: "Judul dan metode formulasi gel ekstrak daun kelor sudah terlalu sering diteliti dan redundan dengan skripsi lulusan tahun 2024 dan 2025. Silakan cari novelti lain, misalnya memformulasikan dalam bentuk self-nanoemulsifying drug delivery system (SNEDDS) atau menggunakan fraksi aktif tanaman yang lebih spesifik.",
-    buktiFile: "bukti_kwitansi_pembayaran_ta.pdf",
-  },
-];
+export const DEFAULT_THESIS_SUBMISSIONS: ThesisSubmission[] = [];
 
 const cloneRequirements = (requirements: RequirementItem[]) =>
   requirements.map((requirement) => ({ ...requirement }));

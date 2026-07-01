@@ -20,12 +20,12 @@ const FormulirPersonalPage = () => {
       >
         <FormPersonalData
           defaultValues={{
-            nama: 'Dimas Indra Jaya',
-            nim: '21103045',
-            email: 'dimas@email.com',
-            phone: '08123456789',
-            tanggalLahir: '2001-06-12',
-            angkatan: '2021',
+            nama: '',
+            nim: '',
+            email: '',
+            phone: '',
+            tanggalLahir: '',
+            angkatan: '',
             skema: 'skripsi',
           }}
           submitText="Simpan Perubahan"

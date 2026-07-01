@@ -26,56 +26,7 @@ interface AgendaRecord {
   revisions?: { id: string; topik: string; catatan: string }[];
 }
 
-const INITIAL_AGENDAS: AgendaRecord[] = [
-  {
-    id: '6',
-    name: 'Sisca Kaila',
-    nim: '887766554',
-    tahapan: 'Seminar Proposal',
-    peran: 'Penguji 2',
-    scheduleDate: '28 Mei 2026',
-    scheduleTime: '09:00 WIB',
-    scheduleRoom: 'Ruang A203',
-    scheduleLocation: 'Gedung Fakultas Teknik',
-    scheduleStatus: 'Terjadwal',
-    hasGrade: false
-  },
-  {
-    id: '10',
-    name: 'Alif Fikri',
-    nim: '10123001',
-    tahapan: 'Seminar Proposal',
-    peran: 'Penguji 1',
-    scheduleDate: '29 Mei 2026',
-    scheduleTime: '10:00 WIB',
-    scheduleRoom: 'Ruang B104',
-    scheduleLocation: 'Gedung Farmasi Lt. 2',
-    scheduleStatus: 'Terjadwal',
-    hasGrade: false
-  },
-  {
-    id: '11',
-    name: 'Ratna Sari',
-    nim: '10123002',
-    tahapan: 'Sidang Akhir',
-    peran: 'Ketua Sidang',
-    scheduleDate: '20 Mei 2026',
-    scheduleTime: '13:30 WIB',
-    scheduleRoom: 'Aula Utama',
-    scheduleLocation: 'Gedung Rektorat Lt. 1',
-    scheduleStatus: 'Selesai',
-    hasGrade: true,
-    scores: {
-      presentasi: 85,
-      penulisan: 80,
-      tanyaJawab: 90
-    },
-    revisions: [
-      { id: '1', topik: 'Perbaiki BAB 3 metodologi penelitian', catatan: 'Sesuaikan teknik sampling dengan rumusan masalah.' },
-      { id: '2', topik: 'Format penulisan Daftar Pustaka', catatan: 'Gunakan format APA style edisi terbaru secara konsisten.' }
-    ]
-  }
-];
+const INITIAL_AGENDAS: AgendaRecord[] = [];
 
 type FilterTab = 'semua' | 'penguji-1' | 'penguji-2' | 'ketua-sidang';
 type MainTab = 'agenda' | 'riwayat';

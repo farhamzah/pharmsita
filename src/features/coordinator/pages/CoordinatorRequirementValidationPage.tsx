@@ -1,14 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import RoleLayoutComponent from '../../../layouts/MainLayout';
 import ContentWrapper from '../../../components/ContentWrapper';
 import { SectionCard } from '../../../components/ui/SectionCard';
 import { getCurrentRolePath } from '../../../lib/getCurrentRolePath';
 import {
-  mockStudentValidationList,
-  mockExtendedStudentRequirements,
-  getStudentValidationStatus,
-  type StudentValidationSummary,
-} from '../../../mock-data/requirement-validation-mocks';
+  coordinatorWorkflowApi,
+  type StudentDirectoryItem,
+} from '../../../core/api/domain';
 import {
   Search,
   Users,
@@ -23,6 +21,20 @@ import {
 
 // ---------- local helpers ----------
 type FilterStatus = 'semua' | 'valid' | 'belum_valid';
+type ValidationStatus = 'Valid' | 'Belum Valid';
+
+type StudentValidationSummary = {
+  studentId: string;
+  nim: string;
+  nama: string;
+  programStudi: string;
+  angkatan: string;
+  tahapanAktif: string;
+  linkBerkasDrive?: string | null;
+  validationStatus: ValidationStatus;
+  validCount: number;
+  totalCount: number;
+};
 
 const STATUS_PILL: Record<
   'Valid' | 'Belum Valid',
@@ -67,12 +79,8 @@ function MiniProgress({ validCount, totalCount }: { validCount: number; totalCou
 
 /** Single student row card */
 function StudentValidationCard({ student, onDetail }: { student: StudentValidationSummary; onDetail: () => void }) {
-  const reqStatus = getStudentValidationStatus(student.studentId);
+  const reqStatus = student.validationStatus;
   const statusCfg = STATUS_PILL[reqStatus];
-
-  // Count valid / total for this student's current active stage reqs
-  const allReqs = mockExtendedStudentRequirements.filter(r => r.studentId === student.studentId);
-  const validCount = allReqs.filter(r => r.status === 'Valid').length;
 
   return (
     <div
@@ -98,7 +106,7 @@ function StudentValidationCard({ student, onDetail }: { student: StudentValidati
           <p className="text-xs text-muted-foreground">
             Tahap: <span className="font-medium text-foreground">{student.tahapanAktif}</span>
           </p>
-          <MiniProgress validCount={validCount} totalCount={allReqs.length || 1} />
+          <MiniProgress validCount={student.validCount} totalCount={student.totalCount} />
         </div>
       </div>
 
@@ -128,15 +136,53 @@ function StudentValidationCard({ student, onDetail }: { student: StudentValidati
 
 // ---------- MAIN PAGE ----------
 
+const mapStudentValidationSummary = (
+  student: StudentDirectoryItem
+): StudentValidationSummary => ({
+  studentId: student.id,
+  nim: student.nim || student.identifier,
+  nama: student.name,
+  programStudi: student.programStudi || '-',
+  angkatan: student.angkatan || '-',
+  tahapanAktif: student.activeStepLabel || '-',
+  linkBerkasDrive: null,
+  validationStatus: 'Belum Valid',
+  validCount: 0,
+  totalCount: 0,
+});
+
 export const CoordinatorRequirementValidationPage: React.FC = () => {
+  const [students, setStudents] = useState<StudentValidationSummary[]>([]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('semua');
   const [filterStage, setFilterStage] = useState<string>('semua');
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    coordinatorWorkflowApi
+      .listStudents({ limit: 100 })
+      .then((response) => {
+        if (!mounted) return;
+        setStudents(response.data.map(mapStudentValidationSummary));
+        setLoadError(null);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setStudents([]);
+        setLoadError('Data validasi persyaratan belum bisa dimuat dari backend.');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Summary counts
-  const totalStudents = mockStudentValidationList.length;
-  const validCount     = mockStudentValidationList.filter(s => getStudentValidationStatus(s.studentId) === 'Valid').length;
-  const belumValidCount = mockStudentValidationList.filter(s => getStudentValidationStatus(s.studentId) === 'Belum Valid').length;
+  const totalStudents = students.length;
+  const validCount = students.filter(s => s.validationStatus === 'Valid').length;
+  const belumValidCount = students.filter(s => s.validationStatus === 'Belum Valid').length;
 
   const statCards = [
     { label: 'Total Mahasiswa', value: totalStudents, color: 'text-foreground', bg: 'bg-muted/50', icon: <Users className="w-5 h-5 text-primary" /> },
@@ -151,15 +197,15 @@ export const CoordinatorRequirementValidationPage: React.FC = () => {
   ];
 
   const filtered = useMemo(() => {
-    let list = mockStudentValidationList;
+    let list = students;
 
     // Filter by tab status
     if (filterStatus !== 'semua') {
-      const statusMap: Record<Exclude<FilterStatus, 'semua'>, ReturnType<typeof getStudentValidationStatus>> = {
+      const statusMap: Record<Exclude<FilterStatus, 'semua'>, ValidationStatus> = {
         valid:       'Valid',
         belum_valid: 'Belum Valid',
       };
-      list = list.filter(s => getStudentValidationStatus(s.studentId) === statusMap[filterStatus]);
+      list = list.filter(s => s.validationStatus === statusMap[filterStatus]);
     }
 
     // Filter by stage
@@ -176,7 +222,7 @@ export const CoordinatorRequirementValidationPage: React.FC = () => {
     }
 
     return list;
-  }, [search, filterStatus, filterStage]);
+  }, [search, filterStatus, filterStage, students]);
 
   const handleDetail = (studentId: string) => {
     window.location.hash = `#/${getCurrentRolePath()}/validasi-persyaratan/detail/${studentId}`;
@@ -188,6 +234,11 @@ export const CoordinatorRequirementValidationPage: React.FC = () => {
         title="Validasi Persyaratan Mahasiswa"
         description="Tinjau dan validasi dokumen persyaratan yang diunggah mahasiswa ke Google Drive"
       >
+        {loadError && (
+          <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            {loadError}
+          </p>
+        )}
         <div className="space-y-6 animate-in fade-in duration-500">
 
           {/* Stat Cards */}

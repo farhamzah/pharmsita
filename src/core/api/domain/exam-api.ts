@@ -7,6 +7,7 @@ import { sidangService } from "../../../features/student/services/sidang-service
 import { apiClient, mockApiAdapter } from "../api-client";
 
 export type ExamStage = "sidang-proposal" | "sidang";
+const isHttpMode = import.meta.env.VITE_API_MODE === "http";
 
 export interface UpdateExamStatusRequest {
   status: SidangStatus;
@@ -28,6 +29,19 @@ export interface ToggleExamPanelistRequest {
 export interface UpdateExamDocsLinkRequest {
   link: string;
 }
+
+const createEmptyExamData = (stageId: ExamStage): SidangData => ({
+  stageId,
+  status: "belum-daftar",
+  panelists: [],
+  schedule: null,
+  requirements: [],
+  submittedAt: null,
+  googleDocsLink: "",
+  grade: null,
+  resultStatus: "belum-dinilai",
+  revisionNotes: [],
+});
 
 mockApiAdapter.register("GET", "/students/me/exams/:stageId", ({ params }) => ({
   data: sidangService.getData(params.stageId as ExamStage),
@@ -96,7 +110,7 @@ mockApiAdapter.register("POST", "/students/me/exams/:stageId/reset", ({ params }
 
 export const examApi = {
   getCached(stageId: ExamStage) {
-    return sidangService.getData(stageId);
+    return isHttpMode ? createEmptyExamData(stageId) : sidangService.getData(stageId);
   },
   get(stageId: ExamStage) {
     return apiClient.get<{ data: SidangData }>(`/students/me/exams/${stageId}`);

@@ -24,68 +24,7 @@ interface DosenSupervisorData {
   completedCount: number;
 }
 
-const INITIAL_DOSEN_LIST: DosenSupervisorData[] = [
-  {
-    id: '1',
-    name: 'Dr. Apt. Rina Marlina, M.Farm.',
-    nip: '198008102005012001',
-    programStudi: 'S1 Farmasi',
-    jabatan: 'Lektor',
-    p1Max: 8,
-    p1Active: 5,
-    p2Max: 8,
-    p2Active: 2,
-    completedCount: 12
-  },
-  {
-    id: '2',
-    name: 'Dr. Apt. Budi Santoso, M.Si.',
-    nip: '197803152006021002',
-    programStudi: 'S1 Farmasi',
-    jabatan: 'Lektor Kepala',
-    p1Max: 6,
-    p1Active: 4,
-    p2Max: 6,
-    p2Active: 1,
-    completedCount: 9
-  },
-  {
-    id: '3',
-    name: 'Dr. Apt. Siti Nurhayati, M.Farm.',
-    nip: '197505202004012003',
-    programStudi: 'S1 Farmasi',
-    jabatan: 'Koordinator / Lektor Kepala',
-    p1Max: 10,
-    p1Active: 4,
-    p2Max: 10,
-    p2Active: 3,
-    completedCount: 15
-  },
-  {
-    id: '4',
-    name: 'Apt. Ahmad Subagja, M.Sc.',
-    nip: '198502122010021004',
-    programStudi: 'S1 Farmasi',
-    jabatan: 'Asisten Ahli',
-    p1Max: 5,
-    p1Active: 3,
-    p2Max: 5,
-    p2Active: 2,
-    completedCount: 4
-  },
-  {
-    id: '5',
-    name: 'Apt. Citra Dewi, M.Farm.',
-    nip: '198812312015012005',
-    programStudi: 'S1 Farmasi',
-    jabatan: 'Asisten Ahli',
-    p1Max: 6,
-    p1Active: 2,
-    p2Max: 6,
-    p2Active: 2,
-    completedCount: 6
-  }
-];
+const INITIAL_DOSEN_LIST: DosenSupervisorData[] = [];
 
 interface MappedStudent {
   id: string;
@@ -110,80 +49,7 @@ interface StudentSupervisorData {
   isCompleted?: boolean;
 }
 
-const INITIAL_STUDENT_LIST: StudentSupervisorData[] = [
-  {
-    id: '10',
-    name: 'Alif Fikri',
-    nim: '10123001',
-    title: 'Sistem Deteksi Anomali Jaringan IoT menggunakan Deep Learning',
-    stage: 'Bimbingan Pra Proposal',
-    p1Id: '1',
-    p2Id: '2'
-  },
-  {
-    id: '6',
-    name: 'Sisca Kaila',
-    nim: '887766554',
-    title: 'Sistem Deteksi Intrusi Jaringan Nirkabel Terdistribusi',
-    stage: 'Seminar Proposal',
-    p1Id: '1',
-    p2Id: '3'
-  },
-  {
-    id: '11',
-    name: 'Ratna Sari',
-    nim: '10123002',
-    title: 'Pengembangan Aplikasi Monitoring Pasien Hipertensi',
-    stage: 'Sidang Akhir',
-    p1Id: '3',
-    p2Id: '1'
-  },
-  {
-    id: '12',
-    name: 'Bagas Aditya',
-    nim: '10123003',
-    title: 'Analisis Sentimen Pengguna Aplikasi E-Commerce menggunakan Metode SVM',
-    stage: 'Sidang Akhir',
-    p1Id: '2',
-    p2Id: '4'
-  },
-  {
-    id: '13',
-    name: 'Dewi Lestari',
-    nim: '10123004',
-    title: 'Penerapan Metode Agile pada Pengembangan Sistem Informasi Akademik',
-    stage: 'Revisi Sidang',
-    p1Id: '4',
-    p2Id: '5'
-  },
-  {
-    id: '14',
-    name: 'Toni Hidayat',
-    nim: '10123005',
-    title: 'Optimasi Jaringan menggunakan Algoritma Genetika',
-    stage: 'Revisi Seminar Proposal',
-    p1Id: '5',
-    p2Id: '4'
-  },
-  {
-    id: '9',
-    name: 'Hendra Setiawan',
-    nim: '121212121',
-    title: 'Pengaruh Smartphone terhadap Prestasi Belajar',
-    stage: 'Selesai',
-    p1Id: '1',
-    p2Id: '2'
-  },
-  {
-    id: '1',
-    name: 'Budi Santoso',
-    nim: '13519001',
-    title: 'Sistem Informasi Manajemen Perpustakaan Berbasis AI',
-    stage: 'Selesai',
-    p1Id: '3',
-    p2Id: '5'
-  }
-];
+const INITIAL_STUDENT_LIST: StudentSupervisorData[] = [];
 
 const getGuidedStudents = (
   students: StudentSupervisorData[],
@@ -282,7 +148,9 @@ export const CoordinatorSupervisorQuotaPage: React.FC = () => {
     refreshDirectories()
       .catch(() => {
         if (!mounted) return;
-        setDirectoryError("Directory backend belum tersedia, memakai data demo lokal.");
+        setDosenList([]);
+        setStudentsList([]);
+        setDirectoryError("Directory backend belum tersedia.");
       })
       .finally(() => {
         if (mounted) {

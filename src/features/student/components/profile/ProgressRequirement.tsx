@@ -4,13 +4,6 @@ import ConditionModal from "../../../thesis-form/modal/ConditionModal";
 import ConfirmModal from "../../../../components/ui/ConfirmModal";
 import SkemaRevisiModal from "./RevisionSchemeModal";
 import { navigateTo } from "../../../../router/Router";
-import { 
-  getStudentRequirementDetails, 
-  mockMasterRequirements 
-} from "../../../../mock-data/requirements";
-import { 
-  mockExtendedStudentRequirements 
-} from "../../../../mock-data/requirement-validation-mocks";
 
 type ProgressItem = {
   label: string;
@@ -40,8 +33,6 @@ const ProgressRequirement: React.FC<ProgressRequirementProps> = ({
   ] = useState(false);
   const [driveLink, setDriveLink] = useState('');
   
-  const studentId = "s_prof_2"; // Aulia Rahma, active student mock
-
   const handleSubmitDrive = () => {
     console.log('Drive Link:', driveLink);
 
@@ -77,21 +68,11 @@ const ProgressRequirement: React.FC<ProgressRequirementProps> = ({
     status: (d.status === 'Valid' ? 'Valid' : 'Belum Valid') as 'Valid' | 'Belum Valid'
   }));
 
-  const getStageCoordinatorNote = (studentId: string, stage: string) => {
-    const stageMasterIds = mockMasterRequirements
-      .filter(m => m.tahap === stage)
-      .map(m => m.id);
-    
-    const studentStageReqs = mockExtendedStudentRequirements.filter(
-      r => r.studentId === studentId && stageMasterIds.includes(r.masterRequirementId)
-    );
-    
-    return studentStageReqs.find(r => r.catatanKoordinator)?.catatanKoordinator || '';
-  };
+  const getStageCoordinatorNote = () => '';
 
-  const persyaratanAwalItems = mapToModalItems(getStudentRequirementDetails(studentId, 'Persyaratan Awal'));
-  const persyaratanSeminarProposalItems = mapToModalItems(getStudentRequirementDetails(studentId, 'Seminar Proposal'));
-  const persyaratanSidangAkhirItems = mapToModalItems(getStudentRequirementDetails(studentId, 'Sidang Akhir'));
+  const persyaratanAwalItems = mapToModalItems([]);
+  const persyaratanSeminarProposalItems = mapToModalItems([]);
+  const persyaratanSidangAkhirItems = mapToModalItems([]);
 
   return (
     <BaseCard>
@@ -150,7 +131,7 @@ const ProgressRequirement: React.FC<ProgressRequirementProps> = ({
         onDriveLinkChange={setDriveLink}
         additionalNote="Untuk Pembayaran Tugas Akhir dibayarkan hanya tunai di bagian Tata Usaha (TU) FAKULTAS FARMASI UBP KARAWANG"
         onSubmitDrive={handleSubmitDrive}
-        coordinatorNote={getStageCoordinatorNote(studentId, 'Persyaratan Awal')}
+        coordinatorNote={getStageCoordinatorNote()}
       />
       <ConditionModal
         open={isPersyaratanSidangAkhirOpen}
@@ -159,7 +140,7 @@ const ProgressRequirement: React.FC<ProgressRequirementProps> = ({
         driveLink={driveLink}
         onDriveLinkChange={setDriveLink}
         onSubmitDrive={handleSubmitDrive}
-        coordinatorNote={getStageCoordinatorNote(studentId, 'Sidang Akhir')}
+        coordinatorNote={getStageCoordinatorNote()}
       />
       <ConditionModal
         open={isPersyaratanSeminarProposalOpen}
@@ -168,7 +149,7 @@ const ProgressRequirement: React.FC<ProgressRequirementProps> = ({
         driveLink={driveLink}
         onDriveLinkChange={setDriveLink}
         onSubmitDrive={handleSubmitDrive}
-        coordinatorNote={getStageCoordinatorNote(studentId, 'Seminar Proposal')}
+        coordinatorNote={getStageCoordinatorNote()}
       />
 
       <SkemaRevisiModal

@@ -6,6 +6,7 @@ import { revisiService } from "../../../features/student/services/revisi-service
 import { apiClient, mockApiAdapter } from "../api-client";
 
 export type RevisionStage = "revisi-proposal" | "revisi-sidang";
+const isHttpMode = import.meta.env.VITE_API_MODE === "http";
 
 export interface UpdateRevisionItemStatusRequest {
   status: "pending" | "in progress" | "done";
@@ -30,6 +31,16 @@ export interface UpdateRevisionApprovalRequest {
 export interface UploadRevisionFinalFileRequest {
   fileName: string;
 }
+
+const createEmptyRevisionData = (stageId: RevisionStage): RevisiData => ({
+  stageId,
+  penguji1Approved: false,
+  penguji2Approved: false,
+  ketuaSidangStatus: "pending",
+  items: [],
+  finalFile: null,
+  submittedAt: null,
+});
 
 export const buildMockRevisionCompletionGateStatus = (
   workflow: RevisiData
@@ -192,7 +203,7 @@ mockApiAdapter.register("POST", "/students/me/revisions/:stageId/reset", ({ para
 
 export const revisionApi = {
   getCached(stageId: RevisionStage) {
-    return revisiService.getData(stageId);
+    return isHttpMode ? createEmptyRevisionData(stageId) : revisiService.getData(stageId);
   },
   get(stageId: RevisionStage) {
     return apiClient.get<{ data: RevisiData }>(`/students/me/revisions/${stageId}`);

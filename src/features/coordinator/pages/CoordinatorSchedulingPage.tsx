@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import RoleLayoutComponent from '../../../layouts/MainLayout';
 import { getCurrentRolePath } from '../../../lib/getCurrentRolePath';
 import ContentWrapper from '../../../components/ContentWrapper';
 import { SectionCard } from '../../../components/ui/SectionCard';
 import DataTable from '../../../components/ui/DataTable';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
-import { coordinatorWorkflowApi } from '../../../core/api/domain';
+import {
+  coordinatorWorkflowApi,
+  type LecturerDirectoryItem,
+  type StudentDirectoryItem,
+} from '../../../core/api/domain';
 import { X, Calendar, CheckCircle2 } from 'lucide-react';
 
 interface ScheduleItem {
@@ -26,120 +30,37 @@ interface ScheduleItem {
   status: 'pending' | 'dijadwalkan' | 'selesai';
 }
 
-const INITIAL_SCHEDULES: ScheduleItem[] = [
-  { 
-    id: 'sch-1', 
-    nim: '10123001', 
-    name: 'Alif Fikri', 
-    studentId: '10', 
-    title: 'Sistem Deteksi Anomali Jaringan IoT menggunakan Deep Learning', 
-    stage: 'Seminar Proposal', 
-    date: null, 
-    time: null, 
-    room: null, 
-    location: null, 
-    examiner1: null, 
-    examiner2: null, 
-    chairman: null, 
-    notes: '', 
-    status: 'pending' 
-  },
-  { 
-    id: 'sch-2', 
-    nim: '887766554', 
-    name: 'Sisca Kaila', 
-    studentId: '6', 
-    title: 'Sistem Deteksi Intrusi Jaringan Nirkabel Terdistribusi', 
-    stage: 'Seminar Proposal', 
-    date: '12 Mei 2026', 
-    time: '09:00 WIB', 
-    room: 'Ruang A203', 
-    location: 'Gedung Fakultas Teknik', 
-    examiner1: 'Dr. Apt. Rina Marlina, M.Farm.', 
-    examiner2: 'Dr. Apt. Budi Santoso, M.Si.', 
-    chairman: 'Apt. Ahmad Subagja, M.Sc.', 
-    notes: 'Harap hadir 15 menit sebelum presentasi.', 
-    status: 'dijadwalkan' 
-  },
-  { 
-    id: 'sch-3', 
-    nim: '10123002', 
-    name: 'Ratna Sari', 
-    studentId: '11', 
-    title: 'Pengembangan Aplikasi Monitoring Pasien Hipertensi Berbasis Mobile', 
-    stage: 'Sidang Akhir', 
-    date: '18 Mei 2026', 
-    time: '10:00 WIB', 
-    room: 'Ruang Sidang Utama', 
-    location: 'Gedung Rektorat Lt. 2', 
-    examiner1: 'Dr. Apt. Siti Nurhayati, M.Farm.', 
-    examiner2: 'Apt. Citra Dewi, M.Farm.', 
-    chairman: 'Dr. Apt. Rina Marlina, M.Farm.', 
-    notes: 'Siapkan berkas kelayakan fisik Bab 1 - Bab 5 rangkap 3.', 
-    status: 'dijadwalkan' 
-  },
-  { 
-    id: 'sch-4', 
-    nim: '10123003', 
-    name: 'Bagas Aditya', 
-    studentId: '12', 
-    title: 'Analisis Sentimen Pengguna Aplikasi E-Commerce menggunakan Metode SVM', 
-    stage: 'Sidang Akhir', 
-    date: null, 
-    time: null, 
-    room: null, 
-    location: null, 
-    examiner1: null, 
-    examiner2: null, 
-    chairman: null, 
-    notes: '', 
-    status: 'pending' 
-  },
-  { 
-    id: 'sch-5', 
-    nim: '13519001', 
-    name: 'Budi Santoso', 
-    studentId: '1', 
-    title: 'Sistem Informasi Manajemen Perpustakaan Berbasis AI', 
-    stage: 'Seminar Proposal', 
-    date: '10 April 2026', 
-    time: '08:00 WIB', 
-    room: 'Ruang Sempro 1', 
-    location: 'Gedung Utama Lt. 1', 
-    examiner1: 'Dr. Apt. Rina Marlina, M.Farm.', 
-    examiner2: 'Dr. Apt. Budi Santoso, M.Si.', 
-    chairman: 'Apt. Ahmad Subagja, M.Sc.', 
-    notes: 'Revisi lembar pengesahan disetujui.', 
-    status: 'selesai' 
-  },
-  { 
-    id: 'sch-6', 
-    nim: '121212121', 
-    name: 'Hendra Setiawan', 
-    studentId: '9', 
-    title: 'Pengaruh Penggunaan Smartphone Terhadap Prestasi Belajar', 
-    stage: 'Sidang Akhir', 
-    date: '05 April 2026', 
-    time: '13:00 WIB', 
-    room: 'Ruang Sidang 2', 
-    location: 'Gedung Dekanat Lt. 3', 
-    examiner1: 'Dr. Apt. Siti Nurhayati, M.Farm.', 
-    examiner2: 'Apt. Citra Dewi, M.Farm.', 
-    chairman: 'Dr. Apt. Budi Santoso, M.Si.', 
-    notes: 'Lulus dengan predikat sangat memuaskan.', 
-    status: 'selesai' 
-  }
-];
+const mapStudentToSchedule = (student: StudentDirectoryItem): ScheduleItem | null => {
+  const stepId = student.activeStepId || '';
+  const stage =
+    stepId === 'sidang-proposal'
+      ? 'Seminar Proposal'
+      : stepId === 'sidang'
+        ? 'Sidang Akhir'
+        : null;
 
-const LECTURERS = [
-  'Dr. Apt. Rina Marlina, M.Farm.',
-  'Dr. Apt. Budi Santoso, M.Si.',
-  'Dr. Apt. Siti Nurhayati, M.Farm.',
-  'Apt. Ahmad Subagja, M.Sc.',
-  'Apt. Citra Dewi, M.Farm.',
-  'Dr. Eka',
-  'Dr. Faisal'
-];
+  if (!stage) return null;
+
+  return {
+    id: `schedule-${student.id}`,
+    nim: student.nim || student.identifier,
+    name: student.name,
+    studentId: student.id,
+    title: student.thesisTitle || 'Tugas Akhir belum diajukan',
+    stage,
+    date: null,
+    time: null,
+    room: null,
+    location: null,
+    examiner1: null,
+    examiner2: null,
+    chairman: null,
+    notes: '',
+    status: student.isCompleted ? 'selesai' : 'pending',
+  };
+};
+
+const mapLecturerName = (lecturer: LecturerDirectoryItem) => lecturer.name;
 
 type TabType = 'semua' | 'sempro' | 'sidang' | 'riwayat-sempro' | 'riwayat-sidang';
 
@@ -147,7 +68,9 @@ const stageToExamStage = (stage: ScheduleItem['stage']) =>
   stage === 'Seminar Proposal' ? 'sidang-proposal' : 'sidang';
 
 export const CoordinatorSchedulingPage: React.FC = () => {
-  const [schedules, setSchedules] = useState<ScheduleItem[]>(INITIAL_SCHEDULES);
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
+  const [lecturerOptions, setLecturerOptions] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('semua');
 
   // Modal form states
@@ -163,6 +86,35 @@ export const CoordinatorSchedulingPage: React.FC = () => {
   const [formEx2, setFormEx2] = useState('');
   const [formChairman, setFormChairman] = useState('');
   const [formNotes, setFormNotes] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+
+    Promise.all([
+      coordinatorWorkflowApi.listStudents({ limit: 100 }),
+      coordinatorWorkflowApi.listLecturers(),
+    ])
+      .then(([studentsResponse, lecturersResponse]) => {
+        if (!mounted) return;
+        setSchedules(
+          studentsResponse.data
+            .map(mapStudentToSchedule)
+            .filter((item): item is ScheduleItem => Boolean(item))
+        );
+        setLecturerOptions(lecturersResponse.data.map(mapLecturerName));
+        setLoadError(null);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setSchedules([]);
+        setLecturerOptions([]);
+        setLoadError('Data penjadwalan belum bisa dimuat dari backend.');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Handle Redirect to stage monitoring details
   const handleViewDetail = (row: ScheduleItem) => {
@@ -313,6 +265,11 @@ export const CoordinatorSchedulingPage: React.FC = () => {
         title="Penjadwalan & Dosen Penguji" 
         description="Kelola slot waktu ujian, plot ruangan, dan alokasi susunan 3 dewan penguji seminar proposal / sidang akhir."
       >
+        {loadError && (
+          <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            {loadError}
+          </p>
+        )}
         {/* Sub-Navigasi Tabs */}
         <div className="flex flex-wrap gap-2 border-b pb-4 mb-6 overflow-x-auto whitespace-nowrap scrollbar-none">
           {tabs.map(tab => (
@@ -437,7 +394,7 @@ export const CoordinatorSchedulingPage: React.FC = () => {
                     className="w-full text-xs border rounded-lg px-3 py-2.5 focus:ring-1 focus:ring-primary bg-background text-foreground"
                   >
                     <option value="">-- Pilih Dosen Penguji 1 --</option>
-                    {LECTURERS.map((name, i) => (
+                    {lecturerOptions.map((name, i) => (
                       <option key={i} value={name} disabled={name === formEx2 || name === formChairman}>{name}</option>
                     ))}
                   </select>
@@ -453,7 +410,7 @@ export const CoordinatorSchedulingPage: React.FC = () => {
                     className="w-full text-xs border rounded-lg px-3 py-2.5 focus:ring-1 focus:ring-primary bg-background text-foreground"
                   >
                     <option value="">-- Pilih Dosen Penguji 2 --</option>
-                    {LECTURERS.map((name, i) => (
+                    {lecturerOptions.map((name, i) => (
                       <option key={i} value={name} disabled={name === formEx1 || name === formChairman}>{name}</option>
                     ))}
                   </select>
@@ -469,7 +426,7 @@ export const CoordinatorSchedulingPage: React.FC = () => {
                     className="w-full text-xs border rounded-lg px-3 py-2.5 focus:ring-1 focus:ring-primary bg-background text-foreground"
                   >
                     <option value="">-- Pilih Ketua Sidang --</option>
-                    {LECTURERS.map((name, i) => (
+                    {lecturerOptions.map((name, i) => (
                       <option key={i} value={name} disabled={name === formEx1 || name === formEx2}>{name}</option>
                     ))}
                   </select>
