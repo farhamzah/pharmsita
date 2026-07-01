@@ -27,7 +27,7 @@ const toUserAccount = (record: UserRecord): UserAccount => {
   return account;
 };
 
-const userRoles: UserRole[] = ["mahasiswa", "dosen", "admin", "koordinator"];
+const userRoles: UserRole[] = ["mahasiswa", "dosen", "admin", "koordinator", "kaprodi", "dekan"];
 const challengeTtlMs = 10 * 60 * 1000;
 
 const isUserRole = (value: string): value is UserRole =>

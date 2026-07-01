@@ -22,6 +22,8 @@ const DEMO_USERS: Record<string, DemoUser> = {
   kordinator: { role: "kordinator", displayName: "Koordinator Demo" },
   koordinator: { role: "kordinator", displayName: "Koordinator Demo" },
   coordinator: { role: "kordinator", displayName: "Koordinator Demo" },
+  kaprodi: { role: "kaprodi", displayName: "Kaprodi Demo" },
+  dekan: { role: "dekan", displayName: "Dekan Demo" },
 };
 
 export class AuthService {

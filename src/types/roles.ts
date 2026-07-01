@@ -1,1 +1,1 @@
-export type Role = "mahasiswa" | 'dosen' | 'admin' | 'kordinator';
+export type Role = "mahasiswa" | "dosen" | "admin" | "kordinator" | "kaprodi" | "dekan";

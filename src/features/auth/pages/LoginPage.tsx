@@ -37,6 +37,10 @@ const roleMeta = (role: ApiRole): { label: string; Icon: LucideIcon } => {
       return { label: "Admin", Icon: ShieldCheck };
     case "kordinator":
       return { label: "Koordinator", Icon: UserCheck };
+    case "kaprodi":
+      return { label: "Kaprodi", Icon: ShieldCheck };
+    case "dekan":
+      return { label: "Dekan", Icon: ShieldCheck };
     default:
       return { label: role, Icon: UserCheck };
   }
@@ -50,11 +54,23 @@ const profileRouteForRole = (role: ApiRole) => {
       return "dosen/profil";
     case "kordinator":
       return "kordinator/profil";
+    case "kaprodi":
+    case "dekan":
+      return "kordinator/profil";
     case "admin":
       return "admin/profil";
     default:
       return normalizeApiRole(role);
   }
+};
+
+const dashboardRouteForRole = (role: ApiRole) => {
+  const normalizedRole = normalizeApiRole(role);
+  if (normalizedRole === "kaprodi" || normalizedRole === "dekan") {
+    return "kordinator";
+  }
+
+  return normalizedRole;
 };
 
 const LoginComponent: React.FC = () => {
@@ -91,7 +107,7 @@ const LoginComponent: React.FC = () => {
     auth.setToken(session.accessToken, session.user.name, role);
     showMessage("Login berhasil, mengalihkan...", "text-green-600");
     setTimeout(
-      () => navigateTo(redirectToProfile ? profileRouteForRole(session.user.role) : role),
+      () => navigateTo(redirectToProfile ? profileRouteForRole(session.user.role) : dashboardRouteForRole(session.user.role)),
       300
     );
   };

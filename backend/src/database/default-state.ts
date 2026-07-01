@@ -204,6 +204,22 @@ export const createDefaultDatabaseState = (): DatabaseState => ({
       "coordinator.final-project-registration.validate",
       "coordinator.guidance.read",
     ],
+    kaprodi: [
+      "coordinator.workflow.read",
+      "coordinator.progress.manage",
+      "coordinator.exam.manage",
+      "coordinator.validation.manage",
+      "coordinator.monitoring.read",
+      "coordinator.final-project-registration.read",
+      "coordinator.final-project-registration.validate",
+      "coordinator.guidance.read",
+    ],
+    dekan: [
+      "coordinator.workflow.read",
+      "coordinator.monitoring.read",
+      "coordinator.final-project-registration.read",
+      "coordinator.guidance.read",
+    ],
   },
   masterData: {
     academicPeriods: [

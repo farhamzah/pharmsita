@@ -18,18 +18,20 @@ import {
   type AdminAccount,
 } from '../../../core/services/admin-data-service';
 
-type AdminRoleKey = 'mahasiswa' | 'dosen' | 'koordinator' | 'admin';
-type AdminRoleLabel = 'Mahasiswa' | 'Dosen' | 'Koordinator' | 'Admin';
+type AdminRoleKey = 'mahasiswa' | 'dosen' | 'koordinator' | 'kaprodi' | 'dekan' | 'admin';
+type AdminRoleLabel = 'Mahasiswa' | 'Dosen' | 'Koordinator' | 'Kaprodi' | 'Dekan' | 'Admin';
 type FormErrors = Record<string, string>;
 
-const roleTabs: Array<'Semua Akun' | AdminRoleLabel> = ['Semua Akun', 'Mahasiswa', 'Dosen', 'Koordinator', 'Admin'];
-const roleOptions: AdminRoleLabel[] = ['Mahasiswa', 'Dosen', 'Koordinator', 'Admin'];
+const roleTabs: Array<'Semua Akun' | AdminRoleLabel> = ['Semua Akun', 'Mahasiswa', 'Dosen', 'Koordinator', 'Kaprodi', 'Dekan', 'Admin'];
+const roleOptions: AdminRoleLabel[] = ['Mahasiswa', 'Dosen', 'Koordinator', 'Kaprodi', 'Dekan', 'Admin'];
 
 const normalizeAdminRole = (role: unknown): AdminRoleKey => {
   const normalized = String(role || '').trim().toLowerCase();
 
   if (normalized === 'dosen') return 'dosen';
   if (normalized === 'koordinator' || normalized === 'kordinator') return 'koordinator';
+  if (normalized === 'kaprodi' || normalized === 'kepala program studi' || normalized === 'kepala-program-studi') return 'kaprodi';
+  if (normalized === 'dekan') return 'dekan';
   if (normalized === 'admin') return 'admin';
   return 'mahasiswa';
 };
@@ -39,6 +41,8 @@ const getRoleLabel = (role: unknown): AdminRoleLabel => {
 
   if (roleKey === 'dosen') return 'Dosen';
   if (roleKey === 'koordinator') return 'Koordinator';
+  if (roleKey === 'kaprodi') return 'Kaprodi';
+  if (roleKey === 'dekan') return 'Dekan';
   if (roleKey === 'admin') return 'Admin';
   return 'Mahasiswa';
 };
@@ -55,6 +59,12 @@ const getRoleThemeClasses = (role: unknown) => {
   if (roleKey === 'koordinator') {
     return "bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-900 dark:text-indigo-400";
   }
+  if (roleKey === 'kaprodi') {
+    return "bg-cyan-50 border-cyan-200 text-cyan-700 dark:bg-cyan-950/20 dark:border-cyan-900 dark:text-cyan-400";
+  }
+  if (roleKey === 'dekan') {
+    return "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900 dark:text-amber-400";
+  }
   return "bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/20 dark:border-rose-900 dark:text-rose-400";
 };
 
@@ -64,6 +74,8 @@ const getRoleAvatarGradient = (role: unknown) => {
   if (roleKey === 'mahasiswa') return 'from-blue-600 to-indigo-600';
   if (roleKey === 'dosen') return 'from-emerald-600 to-teal-600';
   if (roleKey === 'koordinator') return 'from-indigo-600 to-violet-600';
+  if (roleKey === 'kaprodi') return 'from-cyan-600 to-blue-600';
+  if (roleKey === 'dekan') return 'from-amber-600 to-orange-600';
   return 'from-rose-600 to-slate-700';
 };
 
@@ -75,6 +87,8 @@ const getIdentifierLabel = (role: unknown) => {
   if (roleKey === 'mahasiswa') return 'NIM';
   if (roleKey === 'dosen') return 'NIP / NIDN';
   if (roleKey === 'koordinator') return 'NIP / ID';
+  if (roleKey === 'kaprodi') return 'NIP / ID Kaprodi';
+  if (roleKey === 'dekan') return 'NIP / ID Dekan';
   return 'Username / ID Admin';
 };
 
@@ -408,7 +422,7 @@ const AdminUserManagementPage: React.FC = () => {
       };
     }
 
-    if (role === 'Koordinator') {
+    if (role === 'Koordinator' || role === 'Kaprodi' || role === 'Dekan') {
       return {
         ...commonProfile,
         programStudi: formData.programStudi,
@@ -587,7 +601,7 @@ const AdminUserManagementPage: React.FC = () => {
 
       <ContentWrapper
         title="Kelola Akun"
-        description="Manajemen akun Mahasiswa, Dosen, Koordinator, dan Admin PharmSITA."
+        description="Manajemen akun Mahasiswa, Dosen, Koordinator, Kaprodi, Dekan, dan Admin PharmSITA."
         headerRight={
           <Button className="flex items-center gap-2" onClick={handleOpenCreate}>
             <Plus size={16} /> Buat Akun Baru
@@ -717,12 +731,12 @@ const AdminUserManagementPage: React.FC = () => {
           {/* 3. Username / ID Pengguna */}
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">
-              {formData.role === 'Mahasiswa' ? 'Username / ID Pengguna (NIM)' : formData.role === 'Dosen' ? 'Username / ID Pengguna (NIDN / NIP)' : formData.role === 'Koordinator' ? 'Username / ID Pengguna (NIP / ID)' : 'Username / ID Admin'}
+              {formData.role === 'Mahasiswa' ? 'Username / ID Pengguna (NIM)' : formData.role === 'Dosen' ? 'Username / ID Pengguna (NIDN / NIP)' : ['Koordinator', 'Kaprodi', 'Dekan'].includes(formData.role) ? `Username / ID Pengguna (${getIdentifierLabel(formData.role)})` : 'Username / ID Admin'}
             </label>
             <input
               type="text"
               required
-              placeholder={formData.role === 'Mahasiswa' ? 'Masukkan NIM...' : formData.role === 'Dosen' ? 'Masukkan NIDN/NIP...' : formData.role === 'Koordinator' ? 'Masukkan NIP/ID koordinator...' : 'Masukkan username admin...'}
+              placeholder={formData.role === 'Mahasiswa' ? 'Masukkan NIM...' : formData.role === 'Dosen' ? 'Masukkan NIDN/NIP...' : ['Koordinator', 'Kaprodi', 'Dekan'].includes(formData.role) ? `Masukkan ${getIdentifierLabel(formData.role).toLowerCase()}...` : 'Masukkan username admin...'}
               value={formData.identifier}
               onChange={(e) => updateFormField('identifier', e.target.value)}
               className="w-full text-xs border border-border focus:border-primary/50 focus:ring-1 focus:ring-primary rounded-xl px-3 py-2.5 text-foreground bg-background transition font-mono font-semibold"
@@ -902,7 +916,7 @@ const AdminUserManagementPage: React.FC = () => {
               </div>
             )}
 
-            {formData.role === 'Koordinator' && (
+            {['Koordinator', 'Kaprodi', 'Dekan'].includes(formData.role) && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-foreground uppercase tracking-wider block">Program Studi</label>
@@ -1217,7 +1231,7 @@ const AdminUserManagementPage: React.FC = () => {
               )}
 
               {/* KOORDINATOR RENDER */}
-              {isRole(selectedAccount, 'koordinator') && (
+              {(isRole(selectedAccount, 'koordinator') || isRole(selectedAccount, 'kaprodi') || isRole(selectedAccount, 'dekan')) && (
                 <>
                   <h4 className="text-xs font-bold text-foreground uppercase tracking-widest border-b pb-2 flex items-center gap-1.5">
                     <Shield size={14} className="text-primary" /> Otoritas Kebijakan Struktural
@@ -1226,7 +1240,7 @@ const AdminUserManagementPage: React.FC = () => {
                   <div className="space-y-3.5 text-xs">
                     <div className="p-3 bg-muted/20 border rounded-xl space-y-1">
                       <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Jabatan Struktural</span>
-                      <strong className="text-foreground/90 font-semibold block">{selectedAccount.jabatan || 'Koordinator Tugas Akhir'}</strong>
+                      <strong className="text-foreground/90 font-semibold block">{selectedAccount.jabatan || getRoleLabel(selectedAccount.role)}</strong>
                     </div>
 
                     <div className="space-y-2 pt-1">

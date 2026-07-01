@@ -13,6 +13,8 @@ export type AcademicStageType = typeof AcademicStage[keyof typeof AcademicStage]
 export const Roles = {
   ADMIN: 'Admin',
   COORDINATOR: 'Koordinator',
+  HEAD_OF_PROGRAM: 'Kaprodi',
+  DEAN: 'Dekan',
   LECTURER: 'Dosen',
   STUDENT: 'Mahasiswa',
 } as const;

@@ -157,6 +157,10 @@ const normalizeRole = (value: string): UserRole | null => {
     kordinator: "koordinator",
     koordinator: "koordinator",
     coordinator: "koordinator",
+    kaprodi: "kaprodi",
+    "kepala-program-studi": "kaprodi",
+    "kepala-prodi": "kaprodi",
+    dekan: "dekan",
   };
 
   return map[normalized] || map[slug] || null;

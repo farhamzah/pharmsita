@@ -1,4 +1,4 @@
-export type UserRole = "mahasiswa" | "dosen" | "admin" | "koordinator";
+export type UserRole = "mahasiswa" | "dosen" | "admin" | "koordinator" | "kaprodi" | "dekan";
 export type UserStatus = "Aktif" | "Nonaktif";
 
 export interface UserSummary {

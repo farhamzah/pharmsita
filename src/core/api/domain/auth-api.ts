@@ -90,6 +90,8 @@ const rolePermissions: Record<Role, string[]> = {
   dosen: ["lecturer.guidance.read", "lecturer.guidance.approve"],
   admin: ["admin.users.manage", "admin.master.manage", "audit.read"],
   kordinator: ["coordinator.validation.manage", "coordinator.monitoring.read"],
+  kaprodi: ["coordinator.validation.manage", "coordinator.monitoring.read"],
+  dekan: ["coordinator.monitoring.read"],
 };
 
 const buildMockUser = (role: Role, identifier: string, name?: string): AuthUser => ({

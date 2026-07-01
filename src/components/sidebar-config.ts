@@ -21,6 +21,17 @@ export type MenuItem = {
   icon: LucideIcon;
 };
 
+const coordinatorMenu: MenuItem[] = [
+  { label: 'Dashboard', path: 'kordinator', icon: LayoutDashboard },
+  { label: 'Validasi Persyaratan', path: 'kordinator/validasi-persyaratan', icon: ClipboardCheck },
+  { label: 'Pengajuan', path: 'kordinator/pengajuan', icon: FileText },
+  { label: 'Tahapan Akademik', path: 'kordinator/tahapan-akademik', icon: GraduationCap },
+  { label: 'Penjadwalan & Penguji', path: 'kordinator/penjadwalan', icon: CalendarDays },
+  { label: 'Pembimbing & Kuota', path: 'kordinator/pembimbing-kuota', icon: Users },
+  { label: 'Monitoring', path: 'kordinator/monitoring', icon: Activity },
+  { label: 'Notifikasi', path: 'kordinator/notifikasi', icon: Bell },
+];
+
 export const sidebarConfig: Record<Role, MenuItem[]> = {
   mahasiswa: [
     { label: 'Proses TA', path: 'mahasiswa', icon: GraduationCap },
@@ -52,14 +63,7 @@ export const sidebarConfig: Record<Role, MenuItem[]> = {
     { label: 'Monitoring', path: 'admin/monitoring', icon: Activity },
   ],
 
-  kordinator: [
-    { label: 'Dashboard', path: 'kordinator', icon: LayoutDashboard },
-    { label: 'Validasi Persyaratan', path: 'kordinator/validasi-persyaratan', icon: ClipboardCheck },
-    { label: 'Pengajuan', path: 'kordinator/pengajuan', icon: FileText },
-    { label: 'Tahapan Akademik', path: 'kordinator/tahapan-akademik', icon: GraduationCap },
-    { label: 'Penjadwalan & Penguji', path: 'kordinator/penjadwalan', icon: CalendarDays },
-    { label: 'Pembimbing & Kuota', path: 'kordinator/pembimbing-kuota', icon: Users },
-    { label: 'Monitoring', path: 'kordinator/monitoring', icon: Activity },
-    { label: 'Notifikasi', path: 'kordinator/notifikasi', icon: Bell },
-  ],
+  kordinator: coordinatorMenu,
+  kaprodi: coordinatorMenu,
+  dekan: coordinatorMenu,
 };

@@ -586,7 +586,7 @@ export class PostgresUserRepository implements UserRepository {
         );
       }
 
-      if (record.role === "koordinator") {
+      if (["koordinator", "kaprodi", "dekan"].includes(record.role)) {
         await this.db.query(
           `
             INSERT INTO coordinator_profiles (user_id, employee_number, updated_at)
@@ -1018,7 +1018,7 @@ export class PostgresUserRepository implements UserRepository {
       );
     }
 
-    if (user.role === "koordinator") {
+    if (["koordinator", "kaprodi", "dekan"].includes(user.role)) {
       await this.db.query(
         `
           INSERT INTO coordinator_profiles (
